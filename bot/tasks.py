@@ -20,28 +20,54 @@ def _task_is_blocked(task: dict, all_tasks: list[dict]) -> bool:
     return any(bid not in done_ids for bid in blocker_ids)
 
 
-def _format_task(task: dict, all_tasks: list[dict], subtasks: list[dict] | None = None) -> str:
-    blocked = _task_is_blocked(task, all_tasks)
-    done = task.get("Done", "FALSE").upper() == "TRUE"
+def _format_date(date_str: str) -> str:
+    if not date_str:
+        return "open"
+    try:
+        from datetime import datetime
+        d = datetime.strptime(date_str, "%Y-%m-%d")
+        months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+        return f"{months[d.month - 1]} {d.day}"
+    except Exception:
+        return date_str
 
-    status = "✅" if done else ("🔒" if blocked else "⬜")
-    date_str = f"  📅 {task['Date']}" if task.get("Date") else "  📅 open"
+
+def format_single_task(task: dict, subtasks: list[dict] | None = None, all_tasks: list[dict] | None = None) -> str:
+    if all_tasks is None:
+        all_tasks = sheets.get_all_tasks()
+
+    blocked = _task_is_blocked(task, all_tasks)
+
     blocker_ids = _parse_blocked_by(task.get("Blocked By", ""))
-    blocked_str = f"  🚧 blocked by: {', '.join(f'#{b}' for b in blocker_ids)}" if blocker_ids else ""
+    active_blocker_names = []
+    if blocker_ids:
+        id_to_task = {int(t["ID"]): t for t in all_tasks if t.get("ID", "").isdigit()}
+        active_blocker_names = [
+            id_to_task[bid]["Title"]
+            for bid in blocker_ids
+            if id_to_task.get(bid, {}).get("Done", "FALSE").upper() == "FALSE"
+        ]
+
+    title = f"• [blocked] {task['Title']}" if blocked else f"• {task['Title']}"
+    date_str = _format_date(task.get("Date", ""))
+    category = task.get("Category", "")
+    meta = f"{category} · {date_str}" if category else date_str
 
     lines = [
-        f"{status} #{task['ID']} *{task['Title']}*",
-        f"  🏷 {task.get('Category', '')}  |  {task.get('Type', '')}",
-        date_str,
+        f"*{title}*",
+        f"_{meta}_",
     ]
-    if blocked_str:
-        lines.append(blocked_str)
+
+    if active_blocker_names:
+        lines.append(f"Waiting on: {', '.join(active_blocker_names)}")
 
     if subtasks:
         for st in subtasks:
             st_done = st.get("Done", "FALSE").upper() == "TRUE"
-            st_status = "✅" if st_done else "⬜"
-            lines.append(f"    {st_status} {st['Title']}")
+            prefix = "  ✅ " if st_done else "  ⬜ "
+            lines.append(f"{prefix}{st['Title']}")
+
+    return "\n".join(lines)
 
     return "\n".join(lines)
 
@@ -50,59 +76,81 @@ def _format_task(task: dict, all_tasks: list[dict], subtasks: list[dict] | None 
 # Queries
 # ---------------------------------------------------------------------------
 
-def get_today_tasks() -> str:
+def get_today_task_list() -> list[dict]:
     today_str = date.today().isoformat()
     all_tasks = sheets.get_all_tasks()
-    tasks = [
+    return [
         t for t in all_tasks
-        if t.get("Date") == today_str and t.get("Done", "FALSE").upper() == "FALSE"
+        if t.get("Done", "FALSE").upper() == "FALSE"
+        and t.get("Type", "") != "Major"
+        and (not t.get("Date") or t.get("Date") <= today_str)
     ]
-    if not tasks:
-        return "No tasks scheduled for today 🎉"
 
-    lines = [f"*Tasks for today — {today_str}*\n"]
-    for task in tasks:
-        subtasks = sheets.get_subtasks_for(int(task["ID"]))
-        lines.append(_format_task(task, all_tasks, subtasks))
+
+def get_pending_task_list() -> list[dict]:
+    all_tasks = sheets.get_all_tasks()
+    return [t for t in all_tasks if t.get("Done", "FALSE").upper() == "FALSE"]
+
+
+def get_today_tasks() -> str:
+    tasks_list = get_today_task_list()
+    if not tasks_list:
+        return "No daily tasks for today 🎉"
+    today_str = date.today().isoformat()
+    all_subtasks = sheets.get_all_subtasks()
+    subtasks_by_task = {}
+    for st in all_subtasks:
+        tid = st.get("Task ID", "")
+        subtasks_by_task.setdefault(tid, []).append(st)
+
+    lines = [f"*Today — {_format_date(date.today().isoformat())}*\n"]
+    for task in tasks_list:
+        subtasks = subtasks_by_task.get(str(task["ID"]), [])
+        lines.append(format_single_task(task, subtasks, all_tasks))
         lines.append("")
     return "\n".join(lines)
 
 
 def get_all_pending_tasks() -> str:
     all_tasks = sheets.get_all_tasks()
+    all_subtasks = sheets.get_all_subtasks()
     pending = [t for t in all_tasks if t.get("Done", "FALSE").upper() == "FALSE"]
     if not pending:
         return "No pending tasks 🎉"
 
-    daily = [t for t in pending if t.get("Type", "").lower() == "daily"]
-    major = [t for t in pending if t.get("Type", "").lower() == "major"]
+    subtasks_by_task = {}
+    for st in all_subtasks:
+        tid = st.get("Task ID", "")
+        subtasks_by_task.setdefault(tid, []).append(st)
+
+    daily = [t for t in pending if t.get("Type", "") != "Major"]
+    major = [t for t in pending if t.get("Type", "") == "Major"]
 
     lines = ["*All pending tasks*\n"]
 
     if major:
-        lines.append("🗂 *Major*")
+        lines.append("📌 MAJOR")
         for task in major:
-            subtasks = sheets.get_subtasks_for(int(task["ID"]))
-            lines.append(_format_task(task, all_tasks, subtasks))
+            subtasks = subtasks_by_task.get(str(task["ID"]), [])
+            lines.append(format_single_task(task, subtasks, all_tasks))
             lines.append("")
 
     if daily:
-        lines.append("📋 *Daily*")
+        lines.append("📋 DAY TO DAY")
         for task in daily:
-            subtasks = sheets.get_subtasks_for(int(task["ID"]))
-            lines.append(_format_task(task, all_tasks, subtasks))
+            subtasks = subtasks_by_task.get(str(task["ID"]), [])
+            lines.append(format_single_task(task, subtasks, all_tasks))
             lines.append("")
 
     return "\n".join(lines)
 
 
-def get_task_detail(task_id: int) -> str:
-    all_tasks = sheets.get_all_tasks()
+def get_task_detail_with_subtasks(task_id: int) -> dict | None:
     task = sheets.get_task_by_id(task_id)
     if not task:
-        return f"Task #{task_id} not found."
+        return None
     subtasks = sheets.get_subtasks_for(task_id)
-    return _format_task(task, all_tasks, subtasks)
+    return {"task": task, "subtasks": subtasks}
 
 
 # ---------------------------------------------------------------------------
@@ -143,34 +191,36 @@ def create_subtask(task_id: int, title: str) -> dict | None:
 # Complete
 # ---------------------------------------------------------------------------
 
-def complete_task(task_id: int) -> str:
+def complete_task(task_id: int) -> dict:
     subtasks = sheets.get_subtasks_for(task_id)
     pending_subtasks = [s for s in subtasks if s.get("Done", "FALSE").upper() == "FALSE"]
     if pending_subtasks:
-        names = ", ".join(s["Title"] for s in pending_subtasks)
-        return f"⚠️ Task #{task_id} still has pending subtasks:\n{names}\n\nComplete them first or force done with /done {task_id} force"
-
+        return {
+            "status": "pending_subtasks",
+            "subtasks": [s["Title"] for s in pending_subtasks],
+            "message": f"⚠️ Task #{task_id} has pending subtasks.",
+        }
     success = sheets.update_task_done(task_id, True)
     if not success:
-        return f"Task #{task_id} not found."
-    return f"✅ Task #{task_id} marked as done!"
+        return {"status": "error", "message": f"Task #{task_id} not found."}
+    return {"status": "done", "message": f"✅ Task #{task_id} marked as done!"}
 
 
-def complete_task_force(task_id: int) -> str:
+def complete_task_force(task_id: int) -> dict:
     subtasks = sheets.get_subtasks_for(task_id)
     for st in subtasks:
         sheets.update_subtask_done(int(st["ID"]), True)
     success = sheets.update_task_done(task_id, True)
     if not success:
-        return f"Task #{task_id} not found."
-    return f"✅ Task #{task_id} and all its subtasks marked as done!"
+        return {"status": "error", "message": f"Task #{task_id} not found."}
+    return {"status": "done", "message": f"✅ Task #{task_id} and all subtasks marked as done!"}
 
 
-def complete_subtask(subtask_id: int) -> str:
+def complete_subtask(subtask_id: int) -> dict:
     success = sheets.update_subtask_done(subtask_id, True)
     if not success:
-        return f"Subtask #{subtask_id} not found."
-    return f"✅ Subtask #{subtask_id} marked as done!"
+        return {"status": "error", "message": f"Subtask #{subtask_id} not found."}
+    return {"status": "done", "message": f"✅ Subtask #{subtask_id} marked as done!"}
 
 
 # ---------------------------------------------------------------------------

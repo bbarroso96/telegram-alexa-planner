@@ -4,8 +4,7 @@ from config.settings import config
 from bot import tasks
 
 # Conversation states
-CHOOSING_CATEGORY, CHOOSING_TYPE, CHOOSING_DATE, TYPING_TITLE = range(4)
-TYPING_SUBTASK_TITLE = 4
+CHOOSING_CATEGORY, CHOOSING_TYPE, CHOOSING_DATE, TYPING_TITLE, CHOOSING_SUBTASK_TASK, TYPING_SUBTASK_TITLE = range(6)
 
 
 # ---------------------------------------------------------------------------
@@ -33,12 +32,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Here's what I can do:\n\n"
         "/add — add a new task\n"
         "/list — list all pending tasks\n"
-        "/today — tasks scheduled for today\n"
-        "/done <id> — mark a task as done\n"
-        "/done <id> force — mark done even with pending subtasks\n"
-        "/subtask <task\\_id> <title> — add a subtask\n"
-        "/donesub <subtask\\_id> — mark a subtask as done\n"
-        "/task <id> — view task detail\n"
+        "/today — today's daily tasks\n"
+        "/done — mark a task as done\n"
+        "/taskdetail — view and manage a task\n"
+        "/addsubtask — add a subtask to a task\n"
         "/cancel — cancel current operation",
         parse_mode="Markdown",
     )
@@ -57,108 +54,213 @@ async def list_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 # ---------------------------------------------------------------------------
-# /today
+# /today — shows today's tasks with a ✅ button on each
 # ---------------------------------------------------------------------------
 
 async def today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _is_allowed(update):
         await update.message.reply_text(_unauthorized())
         return
-    text = tasks.get_today_tasks()
-    await update.message.reply_text(text, parse_mode="Markdown")
+
+    task_list = tasks.get_today_task_list()
+    if not task_list:
+        await update.message.reply_text("No daily tasks for today 🎉")
+        return
+
+    from datetime import date
+    await update.message.reply_text(f"*Daily tasks — {date.today().isoformat()}*", parse_mode="Markdown")
+
+    for task in task_list:
+        text = tasks.format_single_task(task)
+        keyboard = [[InlineKeyboardButton("✅ Mark done", callback_data=f"done:{task['ID']}")]]
+        await update.message.reply_text(
+            text,
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
 
 
 # ---------------------------------------------------------------------------
-# /task <id>
-# ---------------------------------------------------------------------------
-
-async def task_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _is_allowed(update):
-        await update.message.reply_text(_unauthorized())
-        return
-    if not context.args:
-        await update.message.reply_text("Usage: /task <id>")
-        return
-    try:
-        task_id = int(context.args[0])
-    except ValueError:
-        await update.message.reply_text("Please provide a valid task ID.")
-        return
-    text = tasks.get_task_detail(task_id)
-    await update.message.reply_text(text, parse_mode="Markdown")
-
-
-# ---------------------------------------------------------------------------
-# /done <id> [force]
+# /done — shows pending tasks as buttons
 # ---------------------------------------------------------------------------
 
 async def done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _is_allowed(update):
         await update.message.reply_text(_unauthorized())
         return
-    if not context.args:
-        await update.message.reply_text("Usage: /done <id> or /done <id> force")
-        return
-    try:
-        task_id = int(context.args[0])
-    except ValueError:
-        await update.message.reply_text("Please provide a valid task ID.")
+
+    pending = tasks.get_pending_task_list()
+    if not pending:
+        await update.message.reply_text("No pending tasks 🎉")
         return
 
-    force = len(context.args) > 1 and context.args[1].lower() == "force"
-    if force:
-        text = tasks.complete_task_force(task_id)
+    keyboard = [
+        [InlineKeyboardButton(f"#{t['ID']} {t['Title']}", callback_data=f"done:{t['ID']}")]
+        for t in pending
+    ]
+    await update.message.reply_text(
+        "Which task did you complete?",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+async def handle_done_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    task_id = int(query.data.split(":")[1])
+
+    result = tasks.complete_task(task_id)
+
+    if result["status"] == "pending_subtasks":
+        names = "\n".join(f"  ⬜ {s}" for s in result["subtasks"])
+        keyboard = [
+            [InlineKeyboardButton("✅ Force done", callback_data=f"forcedone:{task_id}")],
+            [InlineKeyboardButton("❌ Cancel", callback_data="cancel_action")],
+        ]
+        await query.edit_message_text(
+            f"⚠️ Task #{task_id} has pending subtasks:\n{names}\n\nForce complete anyway?",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
     else:
-        text = tasks.complete_task(task_id)
-    await update.message.reply_text(text, parse_mode="Markdown")
+        await query.edit_message_text(result["message"])
+
+
+async def handle_force_done_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    task_id = int(query.data.split(":")[1])
+    result = tasks.complete_task_force(task_id)
+    await query.edit_message_text(result["message"])
 
 
 # ---------------------------------------------------------------------------
-# /donesub <subtask_id>
+# /taskdetail — shows all tasks as buttons, then full detail with actions
 # ---------------------------------------------------------------------------
 
-async def done_subtask(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def task_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _is_allowed(update):
         await update.message.reply_text(_unauthorized())
         return
-    if not context.args:
-        await update.message.reply_text("Usage: /donesub <subtask_id>")
+
+    all_tasks = tasks.get_pending_task_list()
+    if not all_tasks:
+        await update.message.reply_text("No pending tasks.")
         return
-    try:
-        subtask_id = int(context.args[0])
-    except ValueError:
-        await update.message.reply_text("Please provide a valid subtask ID.")
+
+    keyboard = [
+        [InlineKeyboardButton(f"#{t['ID']} {t['Title']}", callback_data=f"detail:{t['ID']}")]
+        for t in all_tasks
+    ]
+    await update.message.reply_text(
+        "Which task do you want to see?",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+async def handle_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    task_id = int(query.data.split(":")[1])
+
+    detail = tasks.get_task_detail_with_subtasks(task_id)
+    if not detail:
+        await query.edit_message_text(f"Task #{task_id} not found.")
         return
-    text = tasks.complete_subtask(subtask_id)
-    await update.message.reply_text(text)
+
+    text = tasks.format_single_task(detail["task"], detail["subtasks"])
+
+    buttons = []
+    if detail["task"].get("Done", "FALSE").upper() == "FALSE":
+        buttons.append(InlineKeyboardButton("✅ Mark done", callback_data=f"done:{task_id}"))
+
+    keyboard = [buttons] if buttons else []
+
+    for st in detail["subtasks"]:
+        if st.get("Done", "FALSE").upper() == "FALSE":
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"✅ {st['Title']}",
+                    callback_data=f"donesub:{st['ID']}",
+                )
+            ])
+
+    await query.edit_message_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None,
+    )
+
+
+async def handle_donesub_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    subtask_id = int(query.data.split(":")[1])
+    result = tasks.complete_subtask(subtask_id)
+    await query.edit_message_text(result["message"])
+
+
+async def handle_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text("Cancelled.")
 
 
 # ---------------------------------------------------------------------------
-# /subtask <task_id> <title>
+# /addsubtask — conversation: pick task → type title
 # ---------------------------------------------------------------------------
 
-async def add_subtask(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def add_subtask(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not _is_allowed(update):
         await update.message.reply_text(_unauthorized())
-        return
-    if not context.args or len(context.args) < 2:
-        await update.message.reply_text("Usage: /subtask <task_id> <title>")
-        return
-    try:
-        task_id = int(context.args[0])
-    except ValueError:
-        await update.message.reply_text("Please provide a valid task ID.")
-        return
+        return ConversationHandler.END
 
-    title = " ".join(context.args[1:])
+    pending = tasks.get_pending_task_list()
+    if not pending:
+        await update.message.reply_text("No pending tasks to add a subtask to.")
+        return ConversationHandler.END
+
+    keyboard = [
+        [InlineKeyboardButton(t["Title"], callback_data=f"subtask_task:{t['ID']}")]
+        for t in pending
+    ]
+    await update.message.reply_text(
+        "Which task do you want to add a subtask to?",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+    return CHOOSING_SUBTASK_TASK
+
+
+async def received_subtask_task(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    task_id = int(query.data.split(":")[1])
+    context.user_data["subtask_task_id"] = task_id
+
+    task = tasks.get_task_detail_with_subtasks(task_id)
+    task_title = task["task"]["Title"] if task else f"#{task_id}"
+
+    await query.edit_message_text(f"Adding subtask to *{task_title}*\n\nWhat's the subtask title?", parse_mode="Markdown")
+    return TYPING_SUBTASK_TITLE
+
+
+async def received_subtask_title(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    title = update.message.text.strip()
+    task_id = context.user_data.get("subtask_task_id")
+
     subtask = tasks.create_subtask(task_id, title)
     if not subtask:
-        await update.message.reply_text(f"Task #{task_id} not found.")
-        return
+        await update.message.reply_text("Something went wrong. Task not found.")
+        return ConversationHandler.END
+
+    task = tasks.get_task_detail_with_subtasks(task_id)
+    task_title = task["task"]["Title"] if task else f"#{task_id}"
+
     await update.message.reply_text(
-        f"✅ Subtask added to task #{task_id}:\n_{title}_",
+        f"✅ Subtask added to *{task_title}*:\n_{title}_",
         parse_mode="Markdown",
     )
+    context.user_data.clear()
+    return ConversationHandler.END
 
 
 # ---------------------------------------------------------------------------
@@ -192,7 +294,7 @@ async def received_category(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     context.user_data["category"] = query.data.split(":", 1)[1]
 
     types_ = tasks.get_types()
-    keyboard = [[InlineKeyboardButton(t.capitalize(), callback_data=f"type:{t}")] for t in types_]
+    keyboard = [[InlineKeyboardButton(t, callback_data=f"type:{t}")] for t in types_]
     await query.edit_message_text(
         "Choose a type:",
         reply_markup=InlineKeyboardMarkup(keyboard),
@@ -212,7 +314,7 @@ async def received_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         [InlineKeyboardButton("No date (open task)", callback_data="date:none")],
     ]
     await query.edit_message_text(
-        "When do you plan to work on this?",
+        "When do you plan to start working on this?",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
     return CHOOSING_DATE

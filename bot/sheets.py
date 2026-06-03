@@ -86,17 +86,17 @@ def update_task_done(task_id: int, done: bool) -> bool:
 # Subtasks
 # ---------------------------------------------------------------------------
 
-def get_subtasks_for(task_id: int) -> list[dict]:
+def get_all_subtasks() -> list[dict]:
     sheet = _get_sheet("Subtasks")
     rows = sheet.get_all_values()
     if len(rows) < 2:
         return []
     headers = rows[0]
-    return [
-        dict(zip(headers, row))
-        for row in rows[1:]
-        if row and row[1] == str(task_id)
-    ]
+    return [dict(zip(headers, row)) for row in rows[1:] if any(row)]
+
+
+def get_subtasks_for(task_id: int) -> list[dict]:
+    return [s for s in get_all_subtasks() if s.get("Task ID") == str(task_id)]
 
 
 def get_next_subtask_id() -> int:
