@@ -115,20 +115,66 @@ def add_quick_task_speech(task_name: str) -> str:
 # ---------------------------------------------------------------------------
 
 def start_mark_done_speech() -> dict:
-    return _ssml_keep_open("Sure! Which task did you complete?")
+    return {
+        "version": "1.0",
+        "response": {
+            "outputSpeech": {
+                "type": "SSML",
+                "ssml": "<speak>Which task did you complete?</speak>",
+            },
+            "directives": [
+                {
+                    "type": "Dialog.ElicitSlot",
+                    "slotToElicit": "taskName",
+                    "updatedIntent": {
+                        "name": "MarkTaskDoneIntent",
+                        "confirmationStatus": "NONE",
+                        "slots": {
+                            "taskName": {
+                                "name": "taskName",
+                                "confirmationStatus": "NONE"
+                            }
+                        }
+                    }
+                }
+            ],
+            "shouldEndSession": False,
+        },
+    }
 
 
 def mark_task_done_speech(task_name: str) -> dict:
     task = _find_task_by_name(task_name)
     if not task:
-        return _ssml_keep_open(f"I couldn't find a task called {task_name}. Which task did you complete?")
+        return {
+            "version": "1.0",
+            "response": {
+                "outputSpeech": {
+                    "type": "SSML",
+                    "ssml": f"<speak>I couldn't find a task called {task_name}. Which task did you complete?</speak>",
+                },
+                "directives": [
+                    {
+                        "type": "Dialog.ElicitSlot",
+                        "slotToElicit": "taskName",
+                        "updatedIntent": {
+                            "name": "MarkTaskDoneIntent",
+                            "confirmationStatus": "NONE",
+                            "slots": {
+                                "taskName": {
+                                    "name": "taskName",
+                                    "confirmationStatus": "NONE"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "shouldEndSession": False,
+            },
+        }
 
     sheets.update_task_done(int(task["ID"]), True)
-    return _ssml_keep_open(f"Done! Marked {task['Title']} as complete. Any more?")
-
-
-def finish_mark_done_speech() -> dict:
-    return _ssml("All done. Goodbye!")
+    return _ssml_keep_open(f"Done! Marked {task['Title']} as complete. Any more tasks to mark done?")
 
 
 # ---------------------------------------------------------------------------
