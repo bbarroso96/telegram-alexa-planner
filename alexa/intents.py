@@ -24,30 +24,27 @@ def _find_task_by_name(name: str) -> dict | None:
     return None
 
 
-def _ssml(text: str) -> dict:
+FOLLOW_UP = "Is there anything else I can help with?"
+
+def _ssml(text: str, keep_open: bool = True) -> dict:
     return {
         "version": "1.0",
         "response": {
             "outputSpeech": {
                 "type": "SSML",
-                "ssml": f"<speak>{text}</speak>",
+                "ssml": f"<speak>{text}{' ' + FOLLOW_UP if keep_open else ''}</speak>",
             },
-            "shouldEndSession": True,
+            "shouldEndSession": not keep_open,
         },
     }
 
 
 def _ssml_keep_open(text: str) -> dict:
-    return {
-        "version": "1.0",
-        "response": {
-            "outputSpeech": {
-                "type": "SSML",
-                "ssml": f"<speak>{text}</speak>",
-            },
-            "shouldEndSession": False,
-        },
-    }
+    return _ssml(text, keep_open=True)
+
+
+def _ssml_close(text: str) -> dict:
+    return _ssml(text, keep_open=False)
 
 
 # ---------------------------------------------------------------------------
@@ -140,16 +137,16 @@ def finish_mark_done_speech() -> dict:
 
 def handle_intent(intent_name: str, slots: dict, session_attributes: dict) -> dict:
     if intent_name == "GetTodayTasksIntent":
-        return _ssml(get_today_speech())
+        return _ssml_keep_open(get_today_speech())
 
     elif intent_name == "GetBlockedTasksIntent":
-        return _ssml(get_blocked_speech())
+        return _ssml_keep_open(get_blocked_speech())
 
     elif intent_name == "AddQuickTaskIntent":
         task_name = slots.get("taskName", {}).get("value", "")
         if not task_name:
-            return _ssml("Sorry, I didn't catch the task name.")
-        return _ssml(add_quick_task_speech(task_name))
+            return _ssml_keep_open("Sorry, I didn't catch the task name. What would you like to add?")
+        return _ssml_keep_open(add_quick_task_speech(task_name))
 
     elif intent_name == "MarkTaskDoneIntent":
         task_name = slots.get("taskName", {}).get("value", "")
@@ -161,12 +158,12 @@ def handle_intent(intent_name: str, slots: dict, session_attributes: dict) -> di
         return start_mark_done_speech()
 
     elif intent_name in ("AMAZON.NoIntent", "AMAZON.StopIntent", "AMAZON.CancelIntent"):
-        return finish_mark_done_speech()
+        return _ssml_close("Goodbye!")
 
     elif intent_name == "AMAZON.HelpIntent":
-        return _ssml(
+        return _ssml_keep_open(
             "You can ask me: what do I have today, what's blocked, "
             "add a task, or mark tasks as done."
         )
 
-    return _ssml("Sorry, I didn't understand that.")
+    return _ssml_keep_open("Sorry, I didn't understand that. What can I help you with?")
