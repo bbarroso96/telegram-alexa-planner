@@ -1,5 +1,10 @@
+import json
+
 from fastapi import FastAPI, Request, HTTPException
+
+from config.settings import config
 from alexa import intents
+from alexa.verify import verify, VerificationError
 
 app = FastAPI()
 
@@ -14,7 +19,19 @@ def _supports_apl(body: dict) -> bool:
 
 @app.post("/alexa")
 async def alexa_endpoint(request: Request):
-    body = await request.json()
+    raw = await request.body()
+    try:
+        body = json.loads(raw)
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid JSON")
+
+    # Reject anything that isn't a genuine, fresh request from Amazon for this skill.
+    # Toggle off with ALEXA_VERIFY=false (local dev only — never in production).
+    if config.alexa_verify:
+        try:
+            verify(request.headers, raw, body)
+        except VerificationError as e:
+            raise HTTPException(status_code=400, detail=f"request verification failed: {e}")
 
     request_type = body.get("request", {}).get("type")
     session_attributes = body.get("session", {}).get("attributes", {})

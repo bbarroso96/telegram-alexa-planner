@@ -2,6 +2,7 @@ python-telegram-bot==21.6
 python-dotenv
 fastapi
 uvicorn
+cryptography          # Alexa request-signature verification (alexa/verify.py)
 # Google Sheets deps — only needed for the one-time scripts/migrate_from_sheets.py
 gspread==6.0.2
 google-auth==2.28.0

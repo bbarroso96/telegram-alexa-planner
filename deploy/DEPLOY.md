@@ -24,10 +24,22 @@ git pull
 ## 2. Dependencies
 
 The old version already had `python-telegram-bot`, `fastapi`, `uvicorn`. The SQLite build
-adds **no new runtime deps** (`sqlite3` is stdlib). Only install if you hit an ImportError:
+adds one new dep — **`cryptography`** (for Alexa request-signature verification). Raspberry Pi OS
+usually ships it (`python3-cryptography`); install only if a startup ImportError says it's missing:
 ```bash
 pip3 install -r requirements.txt        # add --break-system-packages on Debian 12+ if needed
 ```
+
+## 2b. Harden the Alexa endpoint (.env)
+
+The public `/alexa` endpoint verifies every request is genuinely from Amazon, for THIS skill.
+Add your skill id so off-skill requests are also rejected — find it in the Alexa console
+(your skill → top of the page, or Build → Endpoint → "Your Skill ID", format `amzn1.ask.skill.…`):
+```bash
+echo 'ALEXA_SKILL_ID=amzn1.ask.skill.xxxxxxxx-...' >> .env
+```
+Verification is **on by default**. If the skill ever stops responding right after deploy, set
+`ALEXA_VERIFY=false` in `.env` + restart to isolate it, tell me the error, then turn it back on.
 
 ## 3. Create the database
 
@@ -94,8 +106,9 @@ Done. `https://<subdomain>/alexa` is now permanent — reboots and restarts no l
 ---
 
 ## Notes / hardening
-- ⚠️ The `/alexa` endpoint does **not** yet verify Amazon's request signature. Fine for a
-  personal skill, but add signature verification before treating it as production.
+- ✅ The `/alexa` endpoint verifies Amazon's request signature + cert + timestamp + applicationId
+  (`alexa/verify.py`). The Cloudflare tunnel opens no inbound ports and exposes only port 8001 —
+  not SSH, files, or the rest of the network.
 - Only `main.py` (bot + Alexa on :8001) is deployed here. The web app (`api/app.py` on :8000 +
   `frontend/dist`) is a separate add-on for later (#7) — uncomment its hostname in the tunnel
   config when you deploy it.

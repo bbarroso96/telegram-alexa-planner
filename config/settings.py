@@ -17,6 +17,9 @@ class Config:
     allowed_user_ids: set = field(default_factory=set)
     spreadsheet_id: str | None = None
     google_creds: dict | None = None
+    # Alexa request hardening (used when the /alexa endpoint is public)
+    alexa_verify: bool = True
+    alexa_skill_id: str | None = None
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -26,12 +29,16 @@ class Config:
         raw_creds = os.environ.get("GOOGLE_CREDS_JSON")
         creds = json.loads(raw_creds) if raw_creds else None
 
+        verify = os.environ.get("ALEXA_VERIFY", "true").strip().lower() not in ("false", "0", "no")
+
         return cls(
             db_path=os.environ.get("DB_PATH", "data/planner.db"),
             bot_token=os.environ.get("BOT_TOKEN"),
             allowed_user_ids=user_ids,
             spreadsheet_id=os.environ.get("SPREADSHEET_ID"),
             google_creds=creds,
+            alexa_verify=verify,
+            alexa_skill_id=os.environ.get("ALEXA_SKILL_ID"),
         )
 
 
