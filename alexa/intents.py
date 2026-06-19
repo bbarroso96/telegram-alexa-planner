@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 from core import repository as sheets
+from alexa import apl
 
 
 # ---------------------------------------------------------------------------
@@ -237,27 +238,115 @@ def get_upcoming_events_speech() -> str:
 
 
 # ---------------------------------------------------------------------------
+# Screen (APL) — build display item lists + attach a RenderDocument directive
+# ---------------------------------------------------------------------------
+
+def _pretty_today() -> str:
+    return apl.short_date(_get_today_str()).upper()
+
+
+def _done_ids(all_tasks) -> set:
+    return {int(t["ID"]) for t in all_tasks
+            if t.get("Done", "").upper() == "TRUE" and t.get("ID", "").isdigit()}
+
+
+def _is_blocked(task, done_ids) -> bool:
+    bids = [int(x) for x in task.get("Blocked By", "").split(",") if x.strip().isdigit()]
+    return any(b not in done_ids for b in bids)
+
+
+def _task_item(task, done_ids) -> dict:
+    done = task.get("Done", "FALSE").upper() == "TRUE"
+    marker = "[x]" if done else ("!!" if _is_blocked(task, done_ids) else "▸")
+    return {"marker": marker, "title": task["Title"], "meta": task.get("Category", ""), "dim": done}
+
+
+def _event_item(e) -> dict:
+    meta = apl.short_date(e["start"]) if e["single"] else \
+        apl.short_date(e["start"]) + "–" + apl.short_date(e["end"])
+    return {"marker": "◆", "title": e["title"], "meta": meta}
+
+
+def _today_items() -> list:
+    today = _get_today_str()
+    all_tasks = sheets.get_all_tasks()
+    done_ids = _done_ids(all_tasks)
+    major = sheets.major_type_name()
+    rows = [t for t in all_tasks if t.get("Done", "FALSE").upper() == "FALSE"
+            and t.get("Type", "") != major and (not t.get("Date") or t.get("Date") <= today)]
+    return [_task_item(t, done_ids) for t in rows]
+
+
+def _pending_items(major_only=False) -> list:
+    all_tasks = sheets.get_all_tasks()
+    done_ids = _done_ids(all_tasks)
+    major = sheets.major_type_name()
+    rows = [t for t in all_tasks if t.get("Done", "FALSE").upper() == "FALSE"
+            and (not major_only or t.get("Type", "") == major)]
+    return [_task_item(t, done_ids) for t in rows]
+
+
+def _blocked_items() -> list:
+    all_tasks = sheets.get_all_tasks()
+    done_ids = _done_ids(all_tasks)
+    return [_task_item(t, done_ids) for t in all_tasks
+            if t.get("Done", "FALSE").upper() == "FALSE" and _is_blocked(t, done_ids)]
+
+
+def _events_today_items() -> list:
+    today = _get_today_str()
+    return [_event_item(e) for e in sheets.get_all_events() if e["start"] <= today <= e["end"]]
+
+
+def _upcoming_items() -> list:
+    today = date.today()
+    today_s, horizon = today.isoformat(), (today + timedelta(days=7)).isoformat()
+    evs = sorted((e for e in sheets.get_all_events()
+                  if e["start"] <= horizon and e["end"] >= today_s), key=lambda e: e["start"])
+    return [_event_item(e) for e in evs]
+
+
+def _render(speech: str, title: str, items: list, supports_apl: bool) -> dict:
+    resp = _ssml_keep_open(speech)
+    if supports_apl:
+        resp["response"]["directives"] = [{
+            "type": "Alexa.Presentation.APL.RenderDocument",
+            "token": "directives",
+            "document": apl.document(title, items),
+        }]
+    return resp
+
+
+def launch_response(supports_apl: bool) -> dict:
+    speech = ("Welcome to your planner. You can ask what's planned for today, "
+              "what's blocked, or what's coming up this week.")
+    return _render(speech, "TODAY · " + _pretty_today(), _today_items(), supports_apl)
+
+
+# ---------------------------------------------------------------------------
 # Intent router
 # ---------------------------------------------------------------------------
 
-def handle_intent(intent_name: str, slots: dict, session_attributes: dict) -> dict:
+def handle_intent(intent_name: str, slots: dict, session_attributes: dict,
+                  supports_apl: bool = False) -> dict:
     if intent_name == "GetTodayTasksIntent":
-        return _ssml_keep_open(get_today_speech())
+        return _render(get_today_speech(), "TODAY · " + _pretty_today(), _today_items(), supports_apl)
 
     elif intent_name == "GetBlockedTasksIntent":
-        return _ssml_keep_open(get_blocked_speech())
+        return _render(get_blocked_speech(), "BLOCKED", _blocked_items(), supports_apl)
 
     elif intent_name == "GetAllTasksIntent":
-        return _ssml_keep_open(get_all_tasks_speech())
+        return _render(get_all_tasks_speech(), "ALL TASKS", _pending_items(), supports_apl)
 
     elif intent_name == "GetMajorTasksIntent":
-        return _ssml_keep_open(get_major_tasks_speech())
+        return _render(get_major_tasks_speech(), sheets.major_type_name().upper(),
+                       _pending_items(major_only=True), supports_apl)
 
     elif intent_name == "GetEventsTodayIntent":
-        return _ssml_keep_open(get_events_today_speech())
+        return _render(get_events_today_speech(), "EVENTS · TODAY", _events_today_items(), supports_apl)
 
     elif intent_name == "GetUpcomingEventsIntent":
-        return _ssml_keep_open(get_upcoming_events_speech())
+        return _render(get_upcoming_events_speech(), "THIS WEEK", _upcoming_items(), supports_apl)
 
     elif intent_name == "AddQuickTaskIntent":
         task_name = slots.get("taskName", {}).get("value", "")

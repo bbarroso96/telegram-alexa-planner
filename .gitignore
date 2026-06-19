@@ -6,4 +6,5 @@ __pycache__/
 data/*.db
 data/*.db-wal
 data/*.db-shm
+alexa/preview_*.json
 .claude/
