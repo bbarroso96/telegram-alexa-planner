@@ -1,0 +1,15 @@
+[Unit]
+Description=Directives Planner Web (FastAPI serving the React app + /api)
+After=network.target
+
+[Service]
+Type=simple
+User=<pi-user>
+WorkingDirectory=/home/<pi-user>/Desktop/telegram-alexa-planner
+# Port 8002 — 8000 is the expense tracker's web, 8001 is this planner's Alexa server.
+ExecStart=/usr/bin/python3 -m uvicorn api.app:app --host 0.0.0.0 --port 8002
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
