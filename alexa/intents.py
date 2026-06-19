@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from core import repository as sheets
 
 
@@ -105,7 +105,7 @@ def add_quick_task_speech(task_name: str) -> str:
     task = tasks.create_task(
         title=task_name,
         category="",
-        type_="Day to Day",
+        type_=sheets.type_name_for_kind("d2d"),   # role lookup — survives type renames
         date_str=_get_today_str(),
     )
     return f"Added: {task['Title']}."
@@ -179,6 +179,64 @@ def mark_task_done_speech(task_name: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# GetAllTasksIntent / GetMajorTasksIntent
+# ---------------------------------------------------------------------------
+
+def _list_speech(titles: list[str], empty: str, noun: str) -> str:
+    if not titles:
+        return empty
+    if len(titles) == 1:
+        return f"You have 1 {noun}: {titles[0]}."
+    joined = ", ".join(titles[:-1]) + f", and {titles[-1]}"
+    return f"You have {len(titles)} {noun}s: {joined}."
+
+
+def get_all_tasks_speech() -> str:
+    pending = [t for t in sheets.get_all_tasks() if t.get("Done", "FALSE").upper() == "FALSE"]
+    return _list_speech([t["Title"] for t in pending],
+                        "You have no pending tasks. All clear!", "pending task")
+
+
+def get_major_tasks_speech() -> str:
+    major_name = sheets.major_type_name()
+    majors = [t for t in sheets.get_all_tasks()
+              if t.get("Done", "FALSE").upper() == "FALSE" and t.get("Type", "") == major_name]
+    return _list_speech([t["Title"] for t in majors],
+                        "You have no major tasks right now.", "major task")
+
+
+# ---------------------------------------------------------------------------
+# GetEventsTodayIntent / GetUpcomingEventsIntent
+# ---------------------------------------------------------------------------
+
+def get_events_today_speech() -> str:
+    today = _get_today_str()
+    titles = [e["title"] for e in sheets.get_all_events() if e["start"] <= today <= e["end"]]
+    if not titles:
+        return "You have nothing on your calendar today."
+    if len(titles) == 1:
+        return f"Today you have: {titles[0]}."
+    joined = ", ".join(titles[:-1]) + f", and {titles[-1]}"
+    return f"Today you have {len(titles)} events: {joined}."
+
+
+def get_upcoming_events_speech() -> str:
+    today = date.today()
+    today_s, horizon = today.isoformat(), (today + timedelta(days=7)).isoformat()
+    upcoming = sorted(
+        (e for e in sheets.get_all_events() if e["start"] <= horizon and e["end"] >= today_s),
+        key=lambda e: e["start"],
+    )
+    titles = [e["title"] for e in upcoming]
+    if not titles:
+        return "You have nothing coming up in the next week."
+    if len(titles) == 1:
+        return f"Coming up this week: {titles[0]}."
+    joined = ", ".join(titles[:-1]) + f", and {titles[-1]}"
+    return f"Coming up this week you have {len(titles)} events: {joined}."
+
+
+# ---------------------------------------------------------------------------
 # Intent router
 # ---------------------------------------------------------------------------
 
@@ -188,6 +246,18 @@ def handle_intent(intent_name: str, slots: dict, session_attributes: dict) -> di
 
     elif intent_name == "GetBlockedTasksIntent":
         return _ssml_keep_open(get_blocked_speech())
+
+    elif intent_name == "GetAllTasksIntent":
+        return _ssml_keep_open(get_all_tasks_speech())
+
+    elif intent_name == "GetMajorTasksIntent":
+        return _ssml_keep_open(get_major_tasks_speech())
+
+    elif intent_name == "GetEventsTodayIntent":
+        return _ssml_keep_open(get_events_today_speech())
+
+    elif intent_name == "GetUpcomingEventsIntent":
+        return _ssml_keep_open(get_upcoming_events_speech())
 
     elif intent_name == "AddQuickTaskIntent":
         task_name = slots.get("taskName", {}).get("value", "")
@@ -209,8 +279,10 @@ def handle_intent(intent_name: str, slots: dict, session_attributes: dict) -> di
 
     elif intent_name == "AMAZON.HelpIntent":
         return _ssml_keep_open(
-            "You can ask me: what do I have today, what's blocked, "
-            "add a task, or mark tasks as done."
+            "You can ask me what you have today, what all your tasks are, "
+            "what your major tasks are, what's blocked, what's on your calendar "
+            "today, or what's coming up this week. You can also add a task or "
+            "mark tasks as done."
         )
 
     return _ssml_keep_open("Sorry, I didn't understand that. What can I help you with?")

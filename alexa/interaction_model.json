@@ -1,0 +1,107 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "captain rocky",
+      "intents": [
+        { "name": "AMAZON.StopIntent", "samples": [] },
+        { "name": "AMAZON.CancelIntent", "samples": [] },
+        { "name": "AMAZON.NoIntent", "samples": [] },
+        { "name": "AMAZON.HelpIntent", "samples": [] },
+        { "name": "AMAZON.FallbackIntent", "samples": [] },
+
+        {
+          "name": "GetTodayTasksIntent",
+          "samples": [
+            "for my tasks today",
+            "what are my tasks today",
+            "what's on my task list today",
+            "to read my directives",
+            "what are my directives today",
+            "my directives for today",
+            "read me today's tasks"
+          ]
+        },
+        {
+          "name": "GetAllTasksIntent",
+          "samples": [
+            "what are all my tasks",
+            "what's on my list",
+            "what's pending",
+            "list all my tasks",
+            "what do I have to do"
+          ]
+        },
+        {
+          "name": "GetMajorTasksIntent",
+          "samples": [
+            "what are my major tasks",
+            "what are my priorities",
+            "what are my big tasks",
+            "what's high priority",
+            "read my major directives"
+          ]
+        },
+        {
+          "name": "GetBlockedTasksIntent",
+          "samples": [
+            "what's blocked",
+            "what tasks are blocked",
+            "what am I waiting on",
+            "what's stuck"
+          ]
+        },
+        {
+          "name": "GetEventsTodayIntent",
+          "samples": [
+            "for my events today",
+            "what events do I have today",
+            "do I have any events today",
+            "to read my events",
+            "any events on my planner today"
+          ]
+        },
+        {
+          "name": "GetUpcomingEventsIntent",
+          "samples": [
+            "what's coming up",
+            "what's coming up this week",
+            "what events do I have this week",
+            "what's on my calendar this week",
+            "read my upcoming events"
+          ]
+        },
+        {
+          "name": "AddQuickTaskIntent",
+          "slots": [{ "name": "taskName", "type": "AMAZON.SearchQuery" }],
+          "samples": [
+            "add a task {taskName}",
+            "add task {taskName}",
+            "add {taskName} to my list",
+            "create a task {taskName}",
+            "remind me to {taskName}"
+          ]
+        },
+        {
+          "name": "MarkTaskDoneIntent",
+          "slots": [{ "name": "taskName", "type": "AMAZON.SearchQuery" }],
+          "samples": [
+            "mark {taskName} as done",
+            "complete {taskName}",
+            "check off {taskName}",
+            "mark a task as done",
+            "I finished a task"
+          ]
+        },
+        {
+          "name": "MoreTasksDoneIntent",
+          "samples": [
+            "mark another task done",
+            "mark more tasks done",
+            "another one"
+          ]
+        }
+      ],
+      "types": []
+    }
+  }
+}

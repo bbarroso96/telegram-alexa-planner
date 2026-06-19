@@ -1,0 +1,22 @@
+# Cloudflare named-tunnel config for the planner's Alexa endpoint.
+# Copy to ~/.cloudflared/config.yml on the Pi and fill in the placeholders.
+#
+#   <tunnel-name>  the name you gave `cloudflared tunnel create` (e.g. rocky)
+#   <tunnel-id>    the UUID printed by that command (also the json filename)
+#   <pi-user>      the Pi login (this project lives under that user's home)
+#   <subdomain>    e.g. rocky.yourdomain.com  (routed via `tunnel route dns`)
+
+tunnel: <tunnel-name>
+credentials-file: /home/<pi-user>/.cloudflared/<tunnel-id>.json
+
+ingress:
+  # Alexa skill + Telegram bot server (main.py listens on 8001)
+  - hostname: <subdomain>
+    service: http://localhost:8001
+
+  # --- Optional: expose the web app later (#7). Uncomment when deployed. ---
+  # - hostname: app.yourdomain.com
+  #   service: http://localhost:8000
+
+  # Required catch-all
+  - service: http_status:404
