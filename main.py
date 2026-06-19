@@ -8,6 +8,7 @@ from telegram.ext import (
     CallbackQueryHandler, ConversationHandler, filters,
 )
 from config.settings import config
+from core.db import init_db
 from bot.handlers import (
     start, add_task, list_tasks, today, done, add_subtask, task_detail, cancel,
     received_title, received_category, received_type,
@@ -71,6 +72,7 @@ def run_telegram_bot():
 
 
 def main():
+    init_db()
     alexa_thread = threading.Thread(target=run_alexa_server, daemon=True)
     alexa_thread.start()
     print("Alexa server running on port 8001...")

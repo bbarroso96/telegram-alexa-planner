@@ -1,5 +1,5 @@
 from datetime import date
-from bot import sheets
+from core import repository as sheets
 
 
 # ---------------------------------------------------------------------------
@@ -69,8 +69,6 @@ def format_single_task(task: dict, subtasks: list[dict] | None = None, all_tasks
 
     return "\n".join(lines)
 
-    return "\n".join(lines)
-
 
 # ---------------------------------------------------------------------------
 # Queries
@@ -78,11 +76,12 @@ def format_single_task(task: dict, subtasks: list[dict] | None = None, all_tasks
 
 def get_today_task_list() -> list[dict]:
     today_str = date.today().isoformat()
+    major_name = sheets.major_type_name()
     all_tasks = sheets.get_all_tasks()
     return [
         t for t in all_tasks
         if t.get("Done", "FALSE").upper() == "FALSE"
-        and t.get("Type", "") != "Major"
+        and t.get("Type", "") != major_name
         and (not t.get("Date") or t.get("Date") <= today_str)
     ]
 
@@ -123,8 +122,9 @@ def get_all_pending_tasks() -> str:
         tid = st.get("Task ID", "")
         subtasks_by_task.setdefault(tid, []).append(st)
 
-    daily = [t for t in pending if t.get("Type", "") != "Major"]
-    major = [t for t in pending if t.get("Type", "") == "Major"]
+    major_name = sheets.major_type_name()
+    daily = [t for t in pending if t.get("Type", "") != major_name]
+    major = [t for t in pending if t.get("Type", "") == major_name]
 
     lines = ["*All pending tasks*\n"]
 
@@ -158,9 +158,9 @@ def get_task_detail_with_subtasks(task_id: int) -> dict | None:
 # ---------------------------------------------------------------------------
 
 def create_task(title: str, category: str, type_: str, date_str: str = "") -> dict:
-    task_id = sheets.get_next_task_id()
-    task = {
-        "ID": task_id,
+    task_id = sheets.add_task(title, category, type_, date_str)
+    return {
+        "ID": str(task_id),
         "Title": title,
         "Category": category,
         "Type": type_,
@@ -168,23 +168,19 @@ def create_task(title: str, category: str, type_: str, date_str: str = "") -> di
         "Date": date_str,
         "Blocked By": "",
     }
-    sheets.append_task(task)
-    return task
 
 
 def create_subtask(task_id: int, title: str) -> dict | None:
     parent = sheets.get_task_by_id(task_id)
     if not parent:
         return None
-    subtask_id = sheets.get_next_subtask_id()
-    subtask = {
-        "ID": subtask_id,
-        "Task ID": task_id,
+    subtask_id = sheets.add_subtask(task_id, title)
+    return {
+        "ID": str(subtask_id),
+        "Task ID": str(task_id),
         "Title": title,
         "Done": "FALSE",
     }
-    sheets.append_subtask(subtask)
-    return subtask
 
 
 # ---------------------------------------------------------------------------

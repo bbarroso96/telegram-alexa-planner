@@ -1,5 +1,5 @@
 from datetime import date
-from bot import sheets
+from core import repository as sheets
 
 
 # ---------------------------------------------------------------------------
@@ -53,11 +53,12 @@ def _ssml_close(text: str) -> dict:
 
 def get_today_speech() -> str:
     today_str = _get_today_str()
+    major_name = sheets.major_type_name()
     all_tasks = sheets.get_all_tasks()
     tasks = [
         t for t in all_tasks
         if t.get("Done", "FALSE").upper() == "FALSE"
-        and t.get("Type", "") != "Major"
+        and t.get("Type", "") != major_name
         and (not t.get("Date") or t.get("Date") <= today_str)
     ]
     if not tasks:
