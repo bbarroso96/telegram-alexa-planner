@@ -4,7 +4,9 @@ from config.settings import config
 from bot import tasks
 
 # Conversation states
-CHOOSING_CATEGORY, CHOOSING_TYPE, CHOOSING_DATE, TYPING_TITLE, CHOOSING_SUBTASK_TASK, TYPING_SUBTASK_TITLE = range(6)
+(CHOOSING_CATEGORY, CHOOSING_TYPE, CHOOSING_DATE, TYPING_TITLE,
+ CHOOSING_SUBTASK_TASK, TYPING_SUBTASK_TITLE,
+ TYPING_EVENT_TITLE, CHOOSING_EVENT_MODE, CHOOSING_EVENT_START, TYPING_EVENT_END) = range(10)
 
 
 # ---------------------------------------------------------------------------
@@ -32,10 +34,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Here's what I can do:\n\n"
         "/add — add a new task\n"
         "/list — list all pending tasks\n"
-        "/today — today's daily tasks\n"
+        "/today — today's tasks & events\n"
         "/done — mark a task as done\n"
         "/taskdetail — view and manage a task\n"
         "/addsubtask — add a subtask to a task\n"
+        "/addevent — add a calendar event\n"
+        "/events — upcoming events\n"
         "/cancel — cancel current operation",
         parse_mode="Markdown",
     )
@@ -62,13 +66,19 @@ async def today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(_unauthorized())
         return
 
+    from datetime import date
+    events = tasks.get_today_events()
+    header = f"*Today — {date.today().isoformat()}*"
+    if events:
+        lines = [header, "", "📅 *Events*"] + [tasks.format_event(e) for e in events]
+        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    else:
+        await update.message.reply_text(header, parse_mode="Markdown")
+
     task_list = tasks.get_today_task_list()
     if not task_list:
         await update.message.reply_text("No daily tasks for today 🎉")
         return
-
-    from datetime import date
-    await update.message.reply_text(f"*Daily tasks — {date.today().isoformat()}*", parse_mode="Markdown")
 
     for task in task_list:
         text = tasks.format_single_task(task)
@@ -383,3 +393,132 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
     await update.message.reply_text("Cancelled.")
     return ConversationHandler.END
+
+
+# ---------------------------------------------------------------------------
+# /addevent — conversation: title → 1 day/range → start date → (end date)
+# ---------------------------------------------------------------------------
+
+async def add_event(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if not _is_allowed(update):
+        await update.message.reply_text(_unauthorized())
+        return ConversationHandler.END
+    await update.message.reply_text("What's the event?")
+    return TYPING_EVENT_TITLE
+
+
+async def received_event_title(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data["ev_title"] = update.message.text.strip()
+    keyboard = [[
+        InlineKeyboardButton("1 day", callback_data="evmode:single"),
+        InlineKeyboardButton("Range", callback_data="evmode:range"),
+    ]]
+    await update.message.reply_text("One day or a date range?", reply_markup=InlineKeyboardMarkup(keyboard))
+    return CHOOSING_EVENT_MODE
+
+
+async def received_event_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    context.user_data["ev_single"] = query.data.split(":", 1)[1] == "single"
+    keyboard = [
+        [InlineKeyboardButton("Today", callback_data="evstart:today")],
+        [InlineKeyboardButton("Tomorrow", callback_data="evstart:tomorrow")],
+        [InlineKeyboardButton("Enter a date", callback_data="evstart:custom")],
+    ]
+    await query.edit_message_text("When does it start?", reply_markup=InlineKeyboardMarkup(keyboard))
+    return CHOOSING_EVENT_START
+
+
+async def received_event_start_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    from datetime import date, timedelta
+    query = update.callback_query
+    await query.answer()
+    choice = query.data.split(":", 1)[1]
+    if choice == "today":
+        context.user_data["ev_start"] = date.today().isoformat()
+        return await _after_event_start(query, context)
+    elif choice == "tomorrow":
+        context.user_data["ev_start"] = (date.today() + timedelta(days=1)).isoformat()
+        return await _after_event_start(query, context)
+    await query.edit_message_text("Enter the start date (YYYY-MM-DD):")
+    return CHOOSING_EVENT_START
+
+
+async def received_event_start_custom(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    from datetime import date
+    raw = update.message.text.strip()
+    try:
+        date.fromisoformat(raw)
+        context.user_data["ev_start"] = raw
+    except ValueError:
+        await update.message.reply_text("Invalid date. Please use YYYY-MM-DD:")
+        return CHOOSING_EVENT_START
+    return await _after_event_start(update, context)
+
+
+async def _after_event_start(update_or_query, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if context.user_data["ev_single"]:
+        return await _finalize_event(update_or_query, context)
+    text = "Enter the end date (YYYY-MM-DD):"
+    if hasattr(update_or_query, "edit_message_text"):
+        await update_or_query.edit_message_text(text)
+    else:
+        await update_or_query.message.reply_text(text)
+    return TYPING_EVENT_END
+
+
+async def received_event_end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    from datetime import date
+    raw = update.message.text.strip()
+    try:
+        date.fromisoformat(raw)
+        context.user_data["ev_end"] = raw
+    except ValueError:
+        await update.message.reply_text("Invalid date. Please use YYYY-MM-DD:")
+        return TYPING_EVENT_END
+    return await _finalize_event(update, context)
+
+
+async def _finalize_event(update_or_query, context: ContextTypes.DEFAULT_TYPE) -> int:
+    d = context.user_data
+    single = d["ev_single"]
+    start = d["ev_start"]
+    end = start if single else d.get("ev_end", start)
+    ev = tasks.create_event(d["ev_title"], single, start, end)
+    text = "✅ Event added!\n\n" + tasks.format_event(ev)
+    if hasattr(update_or_query, "edit_message_text"):
+        await update_or_query.edit_message_text(text, parse_mode="Markdown")
+    else:
+        await update_or_query.message.reply_text(text, parse_mode="Markdown")
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+# ---------------------------------------------------------------------------
+# /events — list upcoming events, each with a delete button
+# ---------------------------------------------------------------------------
+
+async def list_events(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _is_allowed(update):
+        await update.message.reply_text(_unauthorized())
+        return
+    events = tasks.get_upcoming_events()
+    if not events:
+        await update.message.reply_text("No upcoming events 📅")
+        return
+    await update.message.reply_text("*Upcoming events*", parse_mode="Markdown")
+    for e in events:
+        keyboard = [[InlineKeyboardButton("❌ Delete", callback_data=f"evdel:{e['id']}")]]
+        await update.message.reply_text(
+            tasks.format_event(e), parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+
+
+async def handle_event_del_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    event_id = int(query.data.split(":")[1])
+    tasks.delete_event(event_id)
+    await query.edit_message_text("🗑 Event deleted.")

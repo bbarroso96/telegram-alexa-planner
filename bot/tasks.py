@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from core import repository as sheets
 
 
@@ -229,3 +229,37 @@ def get_types() -> list[str]:
 
 def get_categories() -> list[str]:
     return sheets.get_categories()
+
+
+# ---------------------------------------------------------------------------
+# Events (calendar)
+# ---------------------------------------------------------------------------
+
+def create_event(title: str, single: bool, start: str, end: str = "") -> dict:
+    end = start if single else (end or start)
+    if not single and end < start:
+        start, end = end, start
+    event_id = sheets.add_event(title, single, start, end)
+    return {"id": event_id, "title": title, "single": single, "start": start, "end": end}
+
+
+def delete_event(event_id: int) -> int:
+    return sheets.delete_event(event_id)
+
+
+def get_today_events() -> list[dict]:
+    today_str = date.today().isoformat()
+    return [e for e in sheets.get_all_events() if e["start"] <= today_str <= e["end"]]
+
+
+def get_upcoming_events(days: int = 30) -> list[dict]:
+    today_str = date.today().isoformat()
+    horizon = (date.today() + timedelta(days=days)).isoformat()
+    evs = [e for e in sheets.get_all_events() if e["end"] >= today_str and e["start"] <= horizon]
+    return sorted(evs, key=lambda e: e["start"])
+
+
+def format_event(e: dict) -> str:
+    when = _format_date(e["start"]) if e["single"] \
+        else f"{_format_date(e['start'])} – {_format_date(e['end'])}"
+    return f"◆ *{e['title']}*\n_{when}_"
