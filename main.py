@@ -3,6 +3,7 @@ load_dotenv()
 
 import threading
 import uvicorn
+from telegram import BotCommand
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
     CallbackQueryHandler, ConversationHandler, filters,
@@ -30,8 +31,26 @@ def run_alexa_server():
     uvicorn.run(alexa_app, host="0.0.0.0", port=8001, log_level="warning")
 
 
+BOT_COMMANDS = [
+    BotCommand("today", "Today's tasks & events"),
+    BotCommand("list", "All pending tasks"),
+    BotCommand("add", "Add a new task"),
+    BotCommand("done", "Mark a task as done"),
+    BotCommand("taskdetail", "View and manage a task"),
+    BotCommand("addsubtask", "Add a subtask to a task"),
+    BotCommand("addevent", "Add a calendar event"),
+    BotCommand("events", "Upcoming events"),
+    BotCommand("cancel", "Cancel current operation"),
+]
+
+
+async def _post_init(application) -> None:
+    """Register the command menu with Telegram on startup."""
+    await application.bot.set_my_commands(BOT_COMMANDS)
+
+
 def run_telegram_bot():
-    app = ApplicationBuilder().token(config.bot_token).build()
+    app = ApplicationBuilder().token(config.bot_token).post_init(_post_init).build()
 
     add_conv = ConversationHandler(
         entry_points=[CommandHandler("add", add_task)],
