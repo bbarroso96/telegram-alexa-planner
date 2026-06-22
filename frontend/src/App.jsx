@@ -3,6 +3,7 @@ import { api } from './api.js'
 import TaskRow from './components/TaskRow.jsx'
 import Calendar from './components/Calendar.jsx'
 import Config from './components/Config.jsx'
+import Surfaces from './components/Surfaces.jsx'
 
 const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
 const todayISO = () => {
@@ -26,7 +27,7 @@ export default function App() {
 
   // display prefs (persisted)
   const [scan, setScan] = useState(() => localStorage.getItem('pref_scan') !== 'off')
-  const [glow, setGlow] = useState(() => localStorage.getItem('pref_glow') !== 'off')
+  const [glow, setGlow] = useState(() => localStorage.getItem('pref_glow') === 'on')
   const [scale, setScale] = useState(() => parseFloat(localStorage.getItem('pref_scale')) || 1.1)
   useEffect(() => { localStorage.setItem('pref_scan', scan ? 'on' : 'off') }, [scan])
   useEffect(() => {
@@ -138,6 +139,7 @@ export default function App() {
           <button className={'tab' + (tab === 'directives' ? ' active' : '')} onClick={() => setTab('directives')}>[ DIRECTIVES ]</button>
           <button className={'tab' + (tab === 'calendar' ? ' active' : '')} onClick={() => setTab('calendar')}>[ CALENDAR ]</button>
           <button className={'tab' + (tab === 'config' ? ' active' : '')} onClick={() => setTab('config')}>[ CONFIG ]</button>
+          <button className={'tab' + (tab === 'surfaces' ? ' active' : '')} onClick={() => setTab('surfaces')}>[ SURFACES ]</button>
         </div>
 
         {!loaded && <div className="muted" style={{ fontSize: 14 }}>&gt; loading directives_</div>}
@@ -208,6 +210,8 @@ export default function App() {
         {loaded && tab === 'config' && (
           <Config cats={cats} types={types.map((t) => t.name)} reload={reloadConfig} />
         )}
+
+        {loaded && tab === 'surfaces' && <Surfaces />}
       </div>
     </>
   )
