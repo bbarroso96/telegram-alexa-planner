@@ -1,18 +1,19 @@
 import os
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, datetime, timedelta
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from core.db import init_db
 from core import repository as repo
 from api import schemas
+from api import eink
 
 
 @asynccontextmanager
@@ -129,6 +130,60 @@ def _serialize_events() -> list[dict]:
 @app.get("/api/health")
 def health():
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# e-ink board — monochrome PNG of today's directives for the reTerminal E1001.
+#   /dashboard.png?layout=portrait|landscape&cal=2week|month
+# ---------------------------------------------------------------------------
+
+def _eink_data() -> dict:
+    today = date.today()
+    today_s = today.isoformat()
+    tasks = _all_tasks_serialized(include_done=True)
+    visible = [t for t in tasks
+               if t["dateKind"] == "open" or (t["beginDate"] and t["beginDate"] <= today_s)]
+    open_tasks = [t for t in visible if not t["done"]]
+    done_count = sum(1 for t in visible if t["done"])
+    ci = {c: i for i, c in enumerate(repo.get_categories())}
+    key = lambda t: ci.get(t["category"], 99)
+    major = sorted([t for t in open_tasks if t["type"] == "major"], key=key)
+    d2d = sorted([t for t in open_tasks if t["type"] == "d2d"], key=key)
+
+    events = _serialize_events()
+    lo, hi = today - timedelta(days=7), today + timedelta(days=42)
+    by_day = set()
+    for e in events:
+        cur, end = max(date.fromisoformat(e["start"]), lo), min(date.fromisoformat(e["end"]), hi)
+        while cur <= end:
+            by_day.add(cur.isoformat())
+            cur += timedelta(days=1)
+
+    horizon = (today + timedelta(days=14)).isoformat()
+    upcoming = sorted([e for e in events if e["end"] >= today_s and e["start"] <= horizon],
+                      key=lambda e: e["start"])
+
+    def when(e):
+        s, en = date.fromisoformat(e["start"]), date.fromisoformat(e["end"])
+        if e["start"] <= today_s <= e["end"]:
+            return "Today"
+        return eink.short_date(s) if e["single"] else f"{eink.short_date(s)} – {eink.short_date(en)}"
+
+    return {
+        "date": today,
+        "date_label": eink.long_label(today),
+        "updated": datetime.now().strftime("%H:%M"),
+        "open_count": len(open_tasks), "done_count": done_count,
+        "major": major, "d2d": d2d,
+        "events_by_day": by_day,
+        "upcoming": [{"title": e["title"], "when": when(e)} for e in upcoming],
+    }
+
+
+@app.get("/dashboard.png")
+def dashboard_png(layout: str = "portrait", cal: str = "2week"):
+    png = eink.render(_eink_data(), layout=layout, cal=cal)
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,223 @@
+"""Render a monochrome 'today' board for the reTerminal E1001 e-paper display.
+
+The Pi does the layout with Pillow; the e-paper device just fetches this PNG on a
+timer and displays it. Two orientations (landscape 800x480 / portrait 480x800) and
+two calendar styles (a compact month grid or a two-week strip), selected by query
+params. Tasks are priority-ordered (Major first) and fit-to-height with a
+"+ N more" footer so the screen never overflows.
+"""
+import io
+from datetime import date, timedelta
+import calendar as _cal
+
+from PIL import Image, ImageDraw, ImageFont
+
+BLACK, GRAY, LIGHT, WHITE = 0, 120, 186, 255
+MARGIN = 26
+
+MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+          "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+_REG_PATHS = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "C:/Windows/Fonts/segoeui.ttf",
+    "C:/Windows/Fonts/arial.ttf",
+]
+_BOLD_PATHS = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "C:/Windows/Fonts/segoeuib.ttf",
+    "C:/Windows/Fonts/arialbd.ttf",
+]
+
+
+def _font(size: int, bold: bool = False):
+    for path in (_BOLD_PATHS if bold else _REG_PATHS):
+        try:
+            return ImageFont.truetype(path, size)
+        except OSError:
+            continue
+    return ImageFont.load_default()
+
+
+def short_date(d: date) -> str:
+    return f"{MONTHS[d.month - 1]} {d.day}"
+
+
+def long_label(d: date) -> str:
+    return f"{WEEKDAYS[d.weekday()]}, {MONTHS[d.month - 1]} {d.day}"
+
+
+# ---------------------------------------------------------------------------
+# primitives
+# ---------------------------------------------------------------------------
+
+def _checkbox(dr, x, y, size, done=False):
+    dr.rectangle([x, y, x + size, y + size], outline=BLACK, width=2)
+    if done:
+        dr.rectangle([x, y, x + size, y + size], fill=BLACK)
+        dr.line([x + 4, y + size * 0.55, x + size * 0.42, y + size - 4], fill=WHITE, width=2)
+        dr.line([x + size * 0.42, y + size - 4, x + size - 3, y + 3], fill=WHITE, width=2)
+
+
+def _truncate(dr, text, font, maxw):
+    if dr.textlength(text, font=font) <= maxw:
+        return text
+    while text and dr.textlength(text + "…", font=font) > maxw:
+        text = text[:-1]
+    return text.rstrip() + "…"
+
+
+def _divider(dr, x0, x1, y, heavy=False):
+    dr.line([x0, y, x1, y], fill=(BLACK if heavy else LIGHT), width=(2 if heavy else 1))
+    return y
+
+
+# ---------------------------------------------------------------------------
+# blocks — each returns the y coordinate after it
+# ---------------------------------------------------------------------------
+
+def _header(dr, x0, x1, F, data):
+    dr.text((x0, 16), data["date_label"], font=F["date"], fill=BLACK)
+    meta = f"{data['open_count']} open · {data['done_count']} done  ·  {data['updated']}"
+    dr.text((x1, 24), meta, font=F["meta"], fill=GRAY, anchor="rt")
+    return _divider(dr, x0, x1, 50, heavy=True)
+
+
+def _weeks(data, style):
+    today = data["date"]
+    if style == "month":
+        cc = _cal.Calendar(firstweekday=6)  # Sunday first
+        return [[(dt, dt.month == today.month) for dt in wk]
+                for wk in cc.monthdatescalendar(today.year, today.month)]
+    start = today - timedelta(days=(today.weekday() + 1) % 7)  # Sunday of this week
+    days = [start + timedelta(days=i) for i in range(14)]
+    return [[(dt, True) for dt in days[0:7]], [(dt, True) for dt in days[7:14]]]
+
+
+def _calendar(dr, x, y, w, F, data, style):
+    today = data["date"]
+    weeks = _weeks(data, style)
+    if style == "month":
+        label, sub = f"{MONTHS[today.month - 1]} {today.year}", "Today · " + short_date(today)
+        row_h, r, fday = 21, 10, F["cal_sm"]
+    else:
+        first, last = weeks[0][0][0], weeks[1][6][0]
+        label, sub = "This week & next", f"{short_date(first)} – {short_date(last)}"
+        row_h, r, fday = 30, 14, F["cal"]
+
+    dr.text((x, y), label, font=F["h2"], fill=BLACK)
+    dr.text((x + w, y), sub, font=F["meta"], fill=GRAY, anchor="rt")
+    y += 26
+    cw = w / 7
+    for c, ch in enumerate("SMTWTFS"):
+        dr.text((x + c * cw + cw / 2, y), ch, font=F["cal_wd"], fill=GRAY, anchor="mt")
+    y += 20
+
+    events = data["events_by_day"]
+    for wk in weeks:
+        cy = y + row_h / 2
+        for c, (dt, in_scope) in enumerate(wk):
+            cx = x + c * cw + cw / 2
+            if dt == today:
+                dr.ellipse([cx - r, cy - r, cx + r, cy + r], fill=BLACK)
+                dr.text((cx, cy), str(dt.day), font=fday, fill=WHITE, anchor="mm")
+            else:
+                dr.text((cx, cy), str(dt.day), font=fday,
+                        fill=(BLACK if in_scope else LIGHT), anchor="mm")
+                if in_scope and dt.isoformat() in events:
+                    dot = cy + row_h / 2 - 2
+                    dr.ellipse([cx - 2, dot - 2, cx + 2, dot + 2], fill=BLACK)
+        y += row_h
+    return y
+
+
+def _upcoming(dr, x, y, w, F, data, max_events):
+    dr.text((x, y), "UPCOMING", font=F["sec"], fill=BLACK)
+    _divider(dr, x, x + w, y + 18)
+    y += 30
+    shown = data["upcoming"][:max_events]
+    if not shown:
+        dr.text((x, y), "· nothing scheduled", font=F["up"], fill=GRAY)
+        return y + 24
+    for e in shown:
+        dr.ellipse([x, y + 3, x + 6, y + 9], fill=BLACK)
+        line = _truncate(dr, f"{e['title']} — {e['when']}", F["up"], w - 16)
+        dr.text((x + 14, y), line, font=F["up"], fill=BLACK)
+        y += 26
+    return y
+
+
+def _tasks(dr, x, y, w, y_bottom, F, data):
+    box, row_h, reserve = 17, 27, 30
+    drawn = [0]
+    total = len(data["major"]) + len(data["d2d"])
+
+    def section(label, items):
+        nonlocal y
+        if not items or y + 30 > y_bottom - reserve:
+            return
+        dr.text((x, y), label, font=F["sec"], fill=BLACK)
+        _divider(dr, x, x + w, y + 18)
+        y += 28
+        for t in items:
+            if y + row_h > y_bottom - reserve:
+                return
+            _checkbox(dr, x, y + 1, box)
+            title = ("! " if t.get("blocked") else "") + t["title"]
+            title = _truncate(dr, title, F["row"], w - box - 14 - 78)
+            tx = x + box + 14
+            dr.text((tx, y), title, font=F["row"], fill=BLACK)
+            if t.get("category"):
+                dr.text((x + w, y + 2), t["category"], font=F["cat"], fill=GRAY, anchor="rt")
+            y += row_h
+            drawn[0] += 1
+
+    if total == 0:
+        dr.text((x + w / 2, y + 40), "no active directives", font=F["h2"], fill=GRAY, anchor="mm")
+        return
+    section("MAJOR", data["major"])
+    y += 6
+    section("DAY-TO-DAY", data["d2d"])
+    more = total - drawn[0]
+    if more > 0:
+        _divider(dr, x, x + w, y + 2)
+        dr.text((x, y + 10), f"+ {more} more open task{'s' if more != 1 else ''} — see all in the app",
+                font=F["meta"], fill=GRAY)
+
+
+# ---------------------------------------------------------------------------
+# entry point
+# ---------------------------------------------------------------------------
+
+def render(data: dict, layout: str = "portrait", cal: str = "2week") -> bytes:
+    W, H = (480, 800) if layout == "portrait" else (800, 480)
+    img = Image.new("L", (W, H), WHITE)
+    dr = ImageDraw.Draw(img)
+    F = {
+        "date": _font(24, bold=True), "h2": _font(17, bold=True),
+        "sec": _font(13, bold=True), "row": _font(17), "cat": _font(12),
+        "cal": _font(15), "cal_sm": _font(13), "cal_wd": _font(11),
+        "up": _font(15), "meta": _font(13),
+    }
+    m = MARGIN
+    y = _header(dr, m, W - m, F, data)
+
+    if layout == "portrait":
+        cy = _calendar(dr, m, y + 20, W - 2 * m, F, data, cal)
+        _divider(dr, m, W - m, cy + 8, heavy=True)
+        uy = _upcoming(dr, m, cy + 18, W - 2 * m, F, data, max_events=2)
+        _divider(dr, m, W - m, uy + 6, heavy=True)
+        _tasks(dr, m, uy + 16, W - 2 * m, H - m, F, data)
+    else:
+        rx = int(W * 0.56)
+        rw = W - m - rx
+        cy = _calendar(dr, rx, y + 16, rw, F, data, cal)
+        _divider(dr, rx, W - m, cy + 8, heavy=True)
+        _upcoming(dr, rx, cy + 18, rw, F, data, max_events=3)
+        dr.line([rx - 18, y + 12, rx - 18, H - m], fill=LIGHT, width=1)
+        _tasks(dr, m, y + 16, rx - 18 - m - 8, H - m, F, data)
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
