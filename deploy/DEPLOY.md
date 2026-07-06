@@ -112,3 +112,32 @@ Done. `https://<subdomain>/alexa` is now permanent — reboots and restarts no l
 - Only `main.py` (bot + Alexa on :8001) is deployed here. The web app (`api/app.py` on :8000 +
   `frontend/dist`) is a separate add-on for later (#7) — uncomment its hostname in the tunnel
   config when you deploy it.
+
+---
+
+## reTerminal E1001 — e-paper dashboard
+
+`api/eink.py` renders a monochrome "today" board (Pillow) served by the web app:
+
+```
+GET /dashboard.png?layout=portrait|landscape&cal=2week|month
+```
+- `layout` — `portrait` (480x800, stacked) or `landscape` (800x480, two-column). Default `portrait`.
+- `cal` — `2week` (rolling two-week strip) or `month` (full month grid). Default `2week`.
+
+It renders from live data: header with date + open/done counts, the calendar with today
+highlighted and event days dotted, an upcoming-events list, and priority-ordered tasks (Major
+first) that fit-to-height with a `+ N more` footer so the screen never overflows. Done tasks are
+hidden (counted in the header).
+
+**Deploy** (runs inside `directives-web` on :8002, so it's live at
+`https://directives.bbarroso96.com/dashboard.png` through the tunnel):
+```bash
+cd ~/Desktop/telegram-alexa-planner
+git pull
+python3 -c "import PIL" 2>/dev/null || sudo apt install -y python3-pil   # Pillow; pip is blocked by PEP 668
+sudo systemctl restart directives-web.service
+```
+
+**Device**: point the reTerminal at the URL on a ~60-min refresh — via SenseCraft HMI (image-URL
+widget) or a browser in kiosk mode. Pick `layout`/`cal` to taste once it's mounted.
