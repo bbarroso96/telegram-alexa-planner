@@ -181,7 +181,7 @@ def _eink_data() -> dict:
 
 
 @app.get("/dashboard.png")
-def dashboard_png(layout: str = "portrait", cal: str = "2week"):
+def dashboard_png(layout: str = "landscape", cal: str = "2week"):
     png = eink.render(_eink_data(), layout=layout, cal=cal)
     return Response(content=png, media_type="image/png", headers={"Cache-Control": "no-store"})
 

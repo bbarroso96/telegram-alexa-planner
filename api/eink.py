@@ -222,7 +222,7 @@ def _tasks(dr, x, y, w, y_bottom, F, data):
 # entry point
 # ---------------------------------------------------------------------------
 
-def render(data: dict, layout: str = "portrait", cal: str = "2week") -> bytes:
+def render(data: dict, layout: str = "landscape", cal: str = "2week") -> bytes:
     W, H = (480, 800) if layout == "portrait" else (800, 480)
     img = Image.new("L", (W, H), WHITE)
     dr = ImageDraw.Draw(img)

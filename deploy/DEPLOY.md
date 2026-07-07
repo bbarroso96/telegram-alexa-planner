@@ -120,15 +120,16 @@ Done. `https://<subdomain>/alexa` is now permanent — reboots and restarts no l
 `api/eink.py` renders a monochrome "today" board (Pillow) served by the web app:
 
 ```
-GET /dashboard.png?layout=portrait|landscape&cal=2week|month
+GET /dashboard.png?layout=landscape|portrait&cal=2week|month
 ```
-- `layout` — `portrait` (480x800, stacked) or `landscape` (800x480, two-column). Default `portrait`.
+- `layout` — `landscape` (800x480, two-column) or `portrait` (480x800, stacked). Default `landscape`.
 - `cal` — `2week` (rolling two-week strip) or `month` (full month grid). Default `2week`.
 
 It renders from live data: header with date + open/done counts, the calendar with today
 highlighted and event days dotted, an upcoming-events list, and priority-ordered tasks (Major
-first) that fit-to-height with a `+ N more` footer so the screen never overflows. Done tasks are
-hidden (counted in the header).
+first) with their open subtasks indented beneath. Everything fits-to-height with a `+ N more`
+footer so the screen never overflows. Done tasks and done subtasks are hidden (tasks counted in
+the header). Output is flattened to true 1-bit (hard threshold, dashed rules) for the mono panel.
 
 **Deploy** (runs inside `directives-web` on :8002, so it's live at
 `https://directives.bbarroso96.com/dashboard.png` through the tunnel):
