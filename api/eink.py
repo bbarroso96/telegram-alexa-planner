@@ -180,6 +180,7 @@ def _tasks(dr, x, y, w, y_bottom, F, data):
         dr.text((x, y), label, font=F["sec"], fill=BLACK)
         _divider(dr, x, x + w, y + 18)
         y += 28
+        sub_box, sub_h = 12, 21
         for t in items:
             if y + row_h > y_bottom - reserve:
                 return
@@ -192,6 +193,17 @@ def _tasks(dr, x, y, w, y_bottom, F, data):
                 dr.text((x + w, y + 2), t["category"], font=F["cat"], fill=BLACK, anchor="rt")
             y += row_h
             drawn[0] += 1
+            # open subtasks, indented under the parent title (done ones are hidden)
+            for s in t.get("subs", []):
+                if s.get("done"):
+                    continue
+                if y + sub_h > y_bottom - reserve:
+                    break
+                _checkbox(dr, tx, y + 2, sub_box)
+                sx = tx + sub_box + 8
+                stitle = _truncate(dr, s["title"], F["sub"], x + w - sx)
+                dr.text((sx, y), stitle, font=F["sub"], fill=BLACK)
+                y += sub_h
 
     if total == 0:
         dr.text((x + w / 2, y + 40), "no active directives", font=F["h2"], fill=BLACK, anchor="mm")
@@ -218,7 +230,7 @@ def render(data: dict, layout: str = "portrait", cal: str = "2week") -> bytes:
         "date": _font(24, bold=True), "h2": _font(17, bold=True),
         "sec": _font(13, bold=True), "row": _font(17), "cat": _font(12),
         "cal": _font(15), "cal_sm": _font(13), "cal_wd": _font(11),
-        "up": _font(15), "meta": _font(13),
+        "up": _font(15), "meta": _font(13), "sub": _font(14),
     }
     m = MARGIN
     y = _header(dr, m, W - m, F, data)
