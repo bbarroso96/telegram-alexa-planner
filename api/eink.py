@@ -12,7 +12,10 @@ import calendar as _cal
 
 from PIL import Image, ImageDraw, ImageFont
 
-BLACK, GRAY, LIGHT, WHITE = 0, 120, 186, 255
+# 1-bit e-paper: no true grays. Hierarchy comes from font size/weight and dashed
+# rules, never tone — gray text would either dither to a faded dot pattern or break
+# up under a hard threshold, so everything legible is solid BLACK.
+BLACK, WHITE = 0, 255
 MARGIN = 26
 
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -69,8 +72,24 @@ def _truncate(dr, text, font, maxw):
 
 
 def _divider(dr, x0, x1, y, heavy=False):
-    dr.line([x0, y, x1, y], fill=(BLACK if heavy else LIGHT), width=(2 if heavy else 1))
+    # 1-bit e-paper: a light-gray hairline dithers away, so a "light" rule is a
+    # solid-black DASHED line — every pixel is full black (survives the panel) while
+    # the gaps still read as secondary next to the heavy solid rule.
+    if heavy:
+        dr.line([x0, y, x1, y], fill=BLACK, width=2)
+    else:
+        x = x0
+        while x < x1:
+            dr.line([x, y, min(x + 5, x1), y], fill=BLACK, width=1)
+            x += 9
     return y
+
+
+def _vdashed(dr, x, y0, y1):
+    y = y0
+    while y < y1:
+        dr.line([x, y, x, min(y + 5, y1)], fill=BLACK, width=1)
+        y += 9
 
 
 # ---------------------------------------------------------------------------
@@ -80,7 +99,7 @@ def _divider(dr, x0, x1, y, heavy=False):
 def _header(dr, x0, x1, F, data):
     dr.text((x0, 16), data["date_label"], font=F["date"], fill=BLACK)
     meta = f"{data['open_count']} open · {data['done_count']} done  ·  {data['updated']}"
-    dr.text((x1, 24), meta, font=F["meta"], fill=GRAY, anchor="rt")
+    dr.text((x1, 24), meta, font=F["meta"], fill=BLACK, anchor="rt")
     return _divider(dr, x0, x1, 50, heavy=True)
 
 
@@ -107,11 +126,11 @@ def _calendar(dr, x, y, w, F, data, style):
         row_h, r, fday = 30, 14, F["cal"]
 
     dr.text((x, y), label, font=F["h2"], fill=BLACK)
-    dr.text((x + w, y), sub, font=F["meta"], fill=GRAY, anchor="rt")
+    dr.text((x + w, y), sub, font=F["meta"], fill=BLACK, anchor="rt")
     y += 26
     cw = w / 7
     for c, ch in enumerate("SMTWTFS"):
-        dr.text((x + c * cw + cw / 2, y), ch, font=F["cal_wd"], fill=GRAY, anchor="mt")
+        dr.text((x + c * cw + cw / 2, y), ch, font=F["cal_wd"], fill=BLACK, anchor="mt")
     y += 20
 
     events = data["events_by_day"]
@@ -122,10 +141,11 @@ def _calendar(dr, x, y, w, F, data, style):
             if dt == today:
                 dr.ellipse([cx - r, cy - r, cx + r, cy + r], fill=BLACK)
                 dr.text((cx, cy), str(dt.day), font=fday, fill=WHITE, anchor="mm")
+            elif not in_scope:
+                continue  # month spillover: leave the cell blank (no dim gray on 1-bit)
             else:
-                dr.text((cx, cy), str(dt.day), font=fday,
-                        fill=(BLACK if in_scope else LIGHT), anchor="mm")
-                if in_scope and dt.isoformat() in events:
+                dr.text((cx, cy), str(dt.day), font=fday, fill=BLACK, anchor="mm")
+                if dt.isoformat() in events:
                     dot = cy + row_h / 2 - 2
                     dr.ellipse([cx - 2, dot - 2, cx + 2, dot + 2], fill=BLACK)
         y += row_h
@@ -138,7 +158,7 @@ def _upcoming(dr, x, y, w, F, data, max_events):
     y += 30
     shown = data["upcoming"][:max_events]
     if not shown:
-        dr.text((x, y), "· nothing scheduled", font=F["up"], fill=GRAY)
+        dr.text((x, y), "· nothing scheduled", font=F["up"], fill=BLACK)
         return y + 24
     for e in shown:
         dr.ellipse([x, y + 3, x + 6, y + 9], fill=BLACK)
@@ -169,12 +189,12 @@ def _tasks(dr, x, y, w, y_bottom, F, data):
             tx = x + box + 14
             dr.text((tx, y), title, font=F["row"], fill=BLACK)
             if t.get("category"):
-                dr.text((x + w, y + 2), t["category"], font=F["cat"], fill=GRAY, anchor="rt")
+                dr.text((x + w, y + 2), t["category"], font=F["cat"], fill=BLACK, anchor="rt")
             y += row_h
             drawn[0] += 1
 
     if total == 0:
-        dr.text((x + w / 2, y + 40), "no active directives", font=F["h2"], fill=GRAY, anchor="mm")
+        dr.text((x + w / 2, y + 40), "no active directives", font=F["h2"], fill=BLACK, anchor="mm")
         return
     section("MAJOR", data["major"])
     y += 6
@@ -183,7 +203,7 @@ def _tasks(dr, x, y, w, y_bottom, F, data):
     if more > 0:
         _divider(dr, x, x + w, y + 2)
         dr.text((x, y + 10), f"+ {more} more open task{'s' if more != 1 else ''} — see all in the app",
-                font=F["meta"], fill=GRAY)
+                font=F["meta"], fill=BLACK)
 
 
 # ---------------------------------------------------------------------------
@@ -215,9 +235,13 @@ def render(data: dict, layout: str = "portrait", cal: str = "2week") -> bytes:
         cy = _calendar(dr, rx, y + 16, rw, F, data, cal)
         _divider(dr, rx, W - m, cy + 8, heavy=True)
         _upcoming(dr, rx, cy + 18, rw, F, data, max_events=3)
-        dr.line([rx - 18, y + 12, rx - 18, H - m], fill=LIGHT, width=1)
+        _vdashed(dr, rx - 18, y + 12, H - m)
         _tasks(dr, m, y + 16, rx - 18 - m - 8, H - m, F, data)
 
+    # Flatten to true 1-bit with a hard threshold (no dithering) so the panel shows
+    # crisp black/white — grays (secondary text) snap to solid black instead of the
+    # faded dot pattern the device produces when it dithers grayscale itself.
+    img = img.convert("1", dither=Image.NONE)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
