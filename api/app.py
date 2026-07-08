@@ -14,6 +14,7 @@ from core.db import init_db
 from core import repository as repo
 from api import schemas
 from api import eink
+from api import icons
 
 
 @asynccontextmanager
@@ -208,6 +209,19 @@ def _eink_data(refresh_min: int = 60) -> dict:
 def dashboard_png(layout: str = "landscape", cal: str = "2week", every: int = 60):
     png = eink.render(_eink_data(every), layout=layout, cal=cal)
     return Response(content=png, media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
+# Standalone status icons for SenseCraft image widgets (positioned beside the board).
+@app.get("/battery.png")
+def battery_png(level: int = 80):
+    return Response(content=icons.battery(level), media_type="image/png",
+                    headers={"Cache-Control": "no-store"})
+
+
+@app.get("/thermometer.png")
+def thermometer_png():
+    return Response(content=icons.thermometer(), media_type="image/png",
+                    headers={"Cache-Control": "no-store"})
 
 
 # ---------------------------------------------------------------------------
