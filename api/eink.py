@@ -98,7 +98,7 @@ def _vdashed(dr, x, y0, y1):
 
 def _header(dr, x0, x1, F, data):
     dr.text((x0, 16), data["date_label"], font=F["date"], fill=BLACK)
-    meta = f"{data['open_count']} open · {data['done_count']} done  ·  {data['updated']}"
+    meta = f"{data['open_count']} open   ·   Last Refresh: {data['updated']}"
     dr.text((x1, 24), meta, font=F["meta"], fill=BLACK, anchor="rt")
     return _divider(dr, x0, x1, 50, heavy=True)
 
