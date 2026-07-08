@@ -121,31 +121,30 @@ def _mini_thermo(dr, x, y_mid, w=12, h=25):
 
 
 def _header(dr, x0, x1, F, data):
-    dr.text((x0, 16), data["date_label"], font=F["date"], fill=BLACK)
     fs = F["meta"]
+    batt = data.get("battery")
 
-    # status cluster (battery + optional temperature), top-right first line
-    batt, temp = data.get("battery"), data.get("temp")
-    segs = []  # (kind, value_text, glyph_w)
-    if batt is not None:
-        segs.append(("batt", f"{int(batt)}%", 15))
-    if temp is not None:
-        segs.append(("temp", f"{temp}°C", 12))
-    if segs:
-        gap, ymid = 20, 22
-        widths = [gw + 4 + dr.textlength(v, font=fs) for _, v, gw in segs]
-        x = x1 - (sum(widths) + gap * (len(segs) - 1))
-        for (kind, val, gw), wd in zip(segs, widths):
-            (_mini_battery(dr, x, ymid, batt) if kind == "batt"
-             else _mini_thermo(dr, x, ymid))
-            dr.text((x + gw + 4, ymid), val, font=fs, fill=BLACK, anchor="lm")
-            x += wd + gap
+    # LEFT: battery + thermometer glyphs stacked. No numbers drawn — a blank gap
+    # is left to the right of each so you can overlay the real values as text
+    # widgets in SenseCraft.
+    # LEFT: date.
+    dr.text((x0, 16), data["date_label"], font=F["date"], fill=BLACK, anchor="lt")
 
-    meta_y = 42 if segs else 24
+    # MIDDLE: open count + next refresh on one line, centered.
+    midx = (x0 + x1) / 2
     when = data.get("next_refresh", data.get("updated", ""))
-    meta = f"{data['open_count']} open   ·   Next Refresh: {when}"
-    dr.text((x1, meta_y), meta, font=fs, fill=BLACK, anchor="rt")
-    return _divider(dr, x0, x1, 66 if segs else 50, heavy=True)
+    dr.text((midx, 27), f"{data['open_count']} open   ·   Next Refresh: {when}",
+            font=fs, fill=BLACK, anchor="mm")
+
+    # RIGHT: thermometer + battery on one line, with a blank gap after each glyph
+    # for the real values you overlay as text widgets in SenseCraft.
+    ymid, num_space, tw, bw = 27, 44, 13, 16
+    rx = x1 - ((tw + 4 + num_space) + 14 + (bw + 4 + num_space))
+    _mini_thermo(dr, rx, ymid, w=tw, h=24)
+    rx += tw + 4 + num_space + 14
+    _mini_battery(dr, rx, ymid, batt if batt is not None else 80, w=bw, h=24)
+
+    return _divider(dr, x0, x1, 50, heavy=True)
 
 
 def _weeks(data, style):
