@@ -182,7 +182,7 @@ def _eink_data(refresh_min: int = 60, batt: int | None = 80,
             by_day.add(cur.isoformat())
             cur += timedelta(days=1)
 
-    horizon = (today + timedelta(days=14)).isoformat()
+    horizon = (today + timedelta(days=45)).isoformat()
     upcoming = sorted([e for e in events if e["end"] >= today_s and e["start"] <= horizon],
                       key=lambda e: e["start"])
 

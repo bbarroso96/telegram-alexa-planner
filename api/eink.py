@@ -196,19 +196,28 @@ def _calendar(dr, x, y, w, F, data, style):
     return y
 
 
-def _upcoming(dr, x, y, w, F, data, max_events):
+def _upcoming(dr, x, y, w, y_bottom, F, data, cap=None):
     dr.text((x, y), "UPCOMING", font=F["sec"], fill=BLACK)
     _divider(dr, x, x + w, y + 18)
     y += 30
-    shown = data["upcoming"][:max_events]
-    if not shown:
+    events = data["upcoming"]
+    if not events:
         dr.text((x, y), "· nothing scheduled", font=F["up"], fill=BLACK)
         return y + 24
-    for e in shown:
+    items = events[:cap] if cap else events
+    row_h, shown = 26, 0
+    for e in items:
+        if y + row_h > y_bottom - 20:  # keep room for a "+N more" line
+            break
         dr.ellipse([x, y + 3, x + 6, y + 9], fill=BLACK)
         line = _truncate(dr, f"{e['title']} — {e['when']}", F["up"], w - 16)
         dr.text((x + 14, y), line, font=F["up"], fill=BLACK)
-        y += 26
+        y += row_h
+        shown += 1
+    more = len(events) - shown
+    if more > 0:
+        dr.text((x, y + 2), f"+ {more} more upcoming", font=F["meta"], fill=BLACK)
+        y += 24
     return y
 
 
@@ -318,7 +327,7 @@ def render(data: dict, layout: str = "landscape", cal: str = "2week") -> bytes:
     if layout == "portrait":
         cy = _calendar(dr, m, y + 20, W - 2 * m, F, data, cal)
         _divider(dr, m, W - m, cy + 8, heavy=True)
-        uy = _upcoming(dr, m, cy + 18, W - 2 * m, F, data, max_events=2)
+        uy = _upcoming(dr, m, cy + 18, W - 2 * m, H, F, data, cap=3)
         _divider(dr, m, W - m, uy + 6, heavy=True)
         _tasks(dr, m, uy + 16, W - 2 * m, H - m, F, data)
     else:
@@ -326,7 +335,7 @@ def render(data: dict, layout: str = "landscape", cal: str = "2week") -> bytes:
         rw = W - m - rx
         cy = _calendar(dr, rx, y + 16, rw, F, data, cal)
         _divider(dr, rx, W - m, cy + 8, heavy=True)
-        _upcoming(dr, rx, cy + 18, rw, F, data, max_events=3)
+        _upcoming(dr, rx, cy + 18, rw, H - m, F, data)
         _vdashed(dr, rx - 18, y + 12, H - m)
         _tasks(dr, m, y + 16, rx - 18 - m - 8, H - m, F, data)
 
