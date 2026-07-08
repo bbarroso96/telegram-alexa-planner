@@ -158,7 +158,7 @@ def _eink_task(t: dict) -> dict:
     }
 
 
-def _eink_data() -> dict:
+def _eink_data(refresh_min: int = 60) -> dict:
     today = date.today()
     today_s = today.isoformat()
     tasks = _all_tasks_serialized(include_done=True)
@@ -190,10 +190,13 @@ def _eink_data() -> dict:
             return "Today"
         return eink.short_date(s) if e["single"] else f"{eink.short_date(s)} – {eink.short_date(en)}"
 
+    # the device refreshes on its own timer (SenseCraft), so "next refresh" is
+    # simply when this image was generated plus that interval.
+    next_refresh = (datetime.now() + timedelta(minutes=refresh_min)).strftime("%H:%M")
     return {
         "date": today,
         "date_label": eink.long_label(today),
-        "updated": datetime.now().strftime("%H:%M"),
+        "next_refresh": next_refresh,
         "open_count": len(open_tasks), "done_count": done_count,
         "major": major, "d2d": d2d,
         "events_by_day": by_day,
@@ -202,8 +205,8 @@ def _eink_data() -> dict:
 
 
 @app.get("/dashboard.png")
-def dashboard_png(layout: str = "landscape", cal: str = "2week"):
-    png = eink.render(_eink_data(), layout=layout, cal=cal)
+def dashboard_png(layout: str = "landscape", cal: str = "2week", every: int = 60):
+    png = eink.render(_eink_data(every), layout=layout, cal=cal)
     return Response(content=png, media_type="image/png", headers={"Cache-Control": "no-store"})
 
 

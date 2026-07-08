@@ -120,10 +120,13 @@ Done. `https://<subdomain>/alexa` is now permanent — reboots and restarts no l
 `api/eink.py` renders a monochrome "today" board (Pillow) served by the web app:
 
 ```
-GET /dashboard.png?layout=landscape|portrait&cal=2week|month
+GET /dashboard.png?layout=landscape|portrait&cal=2week|month&every=60
 ```
 - `layout` — `landscape` (800x480, two-column) or `portrait` (480x800, stacked). Default `landscape`.
 - `cal` — `2week` (rolling two-week strip) or `month` (full month grid). Default `2week`.
+- `every` — the device's refresh interval in minutes; drives the "Next Refresh: HH:MM" stamp
+  (generation time + `every`). Default `60`. Set it to match the SenseCraft refresh you configured.
+  The clock is `datetime.now()` (system tz) — `sudo timedatectl set-timezone <Area/City>` on the Pi.
 
 It renders from live data: header with date + open/done counts, the calendar with today
 highlighted and event days dotted, an upcoming-events list, and priority-ordered tasks (Major
