@@ -159,7 +159,8 @@ def _eink_task(t: dict) -> dict:
     }
 
 
-def _eink_data(refresh_min: int = 60) -> dict:
+def _eink_data(refresh_min: int = 60, batt: int | None = 80,
+               temp: str | None = None) -> dict:
     today = date.today()
     today_s = today.isoformat()
     tasks = _all_tasks_serialized(include_done=True)
@@ -198,6 +199,7 @@ def _eink_data(refresh_min: int = 60) -> dict:
         "date": today,
         "date_label": eink.long_label(today),
         "next_refresh": next_refresh,
+        "battery": batt, "temp": temp,
         "open_count": len(open_tasks), "done_count": done_count,
         "major": major, "d2d": d2d,
         "events_by_day": by_day,
@@ -206,8 +208,9 @@ def _eink_data(refresh_min: int = 60) -> dict:
 
 
 @app.get("/dashboard.png")
-def dashboard_png(layout: str = "landscape", cal: str = "2week", every: int = 60):
-    png = eink.render(_eink_data(every), layout=layout, cal=cal)
+def dashboard_png(layout: str = "landscape", cal: str = "2week", every: int = 60,
+                  batt: int = 80, temp: str | None = None):
+    png = eink.render(_eink_data(every, batt, temp), layout=layout, cal=cal)
     return Response(content=png, media_type="image/png", headers={"Cache-Control": "no-store"})
 
 

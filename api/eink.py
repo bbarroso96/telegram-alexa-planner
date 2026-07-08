@@ -96,12 +96,56 @@ def _vdashed(dr, x, y0, y1):
 # blocks — each returns the y coordinate after it
 # ---------------------------------------------------------------------------
 
+def _mini_battery(dr, x, y_mid, level, w=15, h=25):
+    """Small vertical battery glyph filled to `level` percent, centered on y_mid."""
+    top = y_mid - h / 2
+    dr.rounded_rectangle([x + w * 0.28, top, x + w * 0.72, top + 4], radius=1, fill=BLACK)  # nub
+    by0, by1 = top + 4, top + h
+    dr.rounded_rectangle([x, by0, x + w, by1], radius=3, outline=BLACK, width=2)
+    lvl = max(0, min(100, int(level)))
+    if lvl > 0:
+        inset = 3
+        fy1 = by1 - inset
+        fy0 = fy1 - lvl / 100 * (by1 - inset - (by0 + inset))
+        dr.rounded_rectangle([x + inset, fy0, x + w - inset, fy1], radius=1, fill=BLACK)
+
+
+def _mini_thermo(dr, x, y_mid, w=12, h=25):
+    """Small filled thermometer silhouette, centered on y_mid."""
+    cx = x + w / 2
+    top = y_mid - h / 2
+    rb = w * 0.55
+    cy = top + h - rb
+    dr.rounded_rectangle([cx - 3, top, cx + 3, cy], radius=3, fill=BLACK)  # stem
+    dr.ellipse([cx - rb, cy - rb, cx + rb, cy + rb], fill=BLACK)           # bulb
+
+
 def _header(dr, x0, x1, F, data):
     dr.text((x0, 16), data["date_label"], font=F["date"], fill=BLACK)
+    fs = F["meta"]
+
+    # status cluster (battery + optional temperature), top-right first line
+    batt, temp = data.get("battery"), data.get("temp")
+    segs = []  # (kind, value_text, glyph_w)
+    if batt is not None:
+        segs.append(("batt", f"{int(batt)}%", 15))
+    if temp is not None:
+        segs.append(("temp", f"{temp}°C", 12))
+    if segs:
+        gap, ymid = 20, 22
+        widths = [gw + 4 + dr.textlength(v, font=fs) for _, v, gw in segs]
+        x = x1 - (sum(widths) + gap * (len(segs) - 1))
+        for (kind, val, gw), wd in zip(segs, widths):
+            (_mini_battery(dr, x, ymid, batt) if kind == "batt"
+             else _mini_thermo(dr, x, ymid))
+            dr.text((x + gw + 4, ymid), val, font=fs, fill=BLACK, anchor="lm")
+            x += wd + gap
+
+    meta_y = 42 if segs else 24
     when = data.get("next_refresh", data.get("updated", ""))
     meta = f"{data['open_count']} open   ·   Next Refresh: {when}"
-    dr.text((x1, 24), meta, font=F["meta"], fill=BLACK, anchor="rt")
-    return _divider(dr, x0, x1, 50, heavy=True)
+    dr.text((x1, meta_y), meta, font=fs, fill=BLACK, anchor="rt")
+    return _divider(dr, x0, x1, 66 if segs else 50, heavy=True)
 
 
 def _weeks(data, style):
