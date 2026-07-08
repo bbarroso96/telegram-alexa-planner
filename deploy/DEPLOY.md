@@ -151,17 +151,6 @@ sudo systemctl restart directives-web.service
 ```
 
 **Device**: point the reTerminal at the URL on a ~60-min refresh — via SenseCraft HMI (image-URL
-widget) or a browser in kiosk mode. Pick `layout`/`cal` to taste once it's mounted.
-
-### Status icons (`api/icons.py`)
-
-Standalone transparent monochrome PNGs to drop beside the board as separate SenseCraft image
-widgets (the device's battery/temperature live in SenseCraft, not the Pi, so they're composed
-device-side, not drawn into the board):
-
-```
-GET /battery.png?level=80     # vertical battery filled 0-100% (default 80)
-GET /thermometer.png          # thermometer glyph
-```
-Put a SenseCraft text/data widget showing the real battery % or SHT4x temperature next to each
-icon. Point the battery image widget at whatever `level` reads best (it's just the glyph).
+widget) or a browser in kiosk mode. Pick `layout`/`cal` to taste once it's mounted. The battery
+and thermometer glyphs are drawn into the board header (top-right) with a blank gap after each —
+overlay the real battery % / SHT4x temperature as SenseCraft text widgets there.
