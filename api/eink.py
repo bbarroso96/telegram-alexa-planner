@@ -168,10 +168,66 @@ def _upcoming(dr, x, y, w, F, data, max_events):
     return y
 
 
-def _tasks(dr, x, y, w, y_bottom, F, data):
-    box, row_h, reserve = 17, 27, 30
+LOG_H = 19
+
+
+def _log(dr, x, y, w, F, lg):
+    """One log line, mirroring the web UI: `└ 07-06 11:25 · note`. The elbow is
+    drawn (not a glyph) so it never depends on the panel font having box-drawing."""
+    dr.line([x + 2, y - 2, x + 2, y + 9], fill=BLACK, width=1)
+    dr.line([x + 2, y + 9, x + 9, y + 9], fill=BLACK, width=1)
+    lx = x + 14
+    stamp = lg["when"]
+    dr.text((lx, y), stamp, font=F["logb"], fill=BLACK)
+    off = dr.textlength(stamp, font=F["logb"])
+    dr.text((lx + off, y), _truncate(dr, " · " + lg["text"], F["log"], w - 14 - off),
+            font=F["log"], fill=BLACK)
+
+
+def _task_block(dr, x, y, w, y_bottom, F, t, reserve, max_logs):
+    """A task with its logs, subtasks, and each subtask's logs. Returns the new y,
+    or None if the task header itself didn't fit (caller stops and shows '+ N more')."""
+    box, sbox, task_h, sub_h = 17, 12, 27, 23
+    if y + task_h > y_bottom - reserve:
+        return None
+    _checkbox(dr, x, y + 1, box)
+    tx = x + box + 14
+    title = ("! " if t.get("blocked") else "") + t["title"]
+    dr.text((tx, y), _truncate(dr, title, F["row"], w - box - 14 - 78), font=F["row"], fill=BLACK)
+    if t.get("category"):
+        dr.text((x + w, y + 2), t["category"], font=F["cat"], fill=BLACK, anchor="rt")
+    y += task_h
+    # logs belonging to the task itself
+    for lg in t.get("logs", [])[-max_logs:]:
+        if y + LOG_H > y_bottom - reserve:
+            return y
+        _log(dr, tx, y, x + w - tx, F, lg)
+        y += LOG_H
+    # subtasks (done hidden), each followed by its own logs
+    for s in t.get("subs", []):
+        if s.get("done"):
+            continue
+        if y + sub_h > y_bottom - reserve:
+            return y
+        _checkbox(dr, tx, y + 2, sbox)
+        sx = tx + sbox + 8
+        dr.text((sx, y), _truncate(dr, s["title"], F["sub"], x + w - sx), font=F["sub"], fill=BLACK)
+        y += sub_h
+        for lg in s.get("logs", [])[-max_logs:]:
+            if y + LOG_H > y_bottom - reserve:
+                return y
+            _log(dr, sx, y, x + w - sx, F, lg)
+            y += LOG_H
+    return y
+
+
+def _tasks(dr, x, y, w, y_bottom, F, data, max_logs=2):
+    reserve = 26
     drawn = [0]
     total = len(data["major"]) + len(data["d2d"])
+    if total == 0:
+        dr.text((x + w / 2, y + 40), "no active directives", font=F["h2"], fill=BLACK, anchor="mm")
+        return
 
     def section(label, items):
         nonlocal y
@@ -180,34 +236,13 @@ def _tasks(dr, x, y, w, y_bottom, F, data):
         dr.text((x, y), label, font=F["sec"], fill=BLACK)
         _divider(dr, x, x + w, y + 18)
         y += 28
-        sub_box, sub_h = 12, 21
         for t in items:
-            if y + row_h > y_bottom - reserve:
+            ny = _task_block(dr, x, y, w, y_bottom, F, t, reserve, max_logs)
+            if ny is None:
                 return
-            _checkbox(dr, x, y + 1, box)
-            title = ("! " if t.get("blocked") else "") + t["title"]
-            title = _truncate(dr, title, F["row"], w - box - 14 - 78)
-            tx = x + box + 14
-            dr.text((tx, y), title, font=F["row"], fill=BLACK)
-            if t.get("category"):
-                dr.text((x + w, y + 2), t["category"], font=F["cat"], fill=BLACK, anchor="rt")
-            y += row_h
+            y = ny + 6
             drawn[0] += 1
-            # open subtasks, indented under the parent title (done ones are hidden)
-            for s in t.get("subs", []):
-                if s.get("done"):
-                    continue
-                if y + sub_h > y_bottom - reserve:
-                    break
-                _checkbox(dr, tx, y + 2, sub_box)
-                sx = tx + sub_box + 8
-                stitle = _truncate(dr, s["title"], F["sub"], x + w - sx)
-                dr.text((sx, y), stitle, font=F["sub"], fill=BLACK)
-                y += sub_h
 
-    if total == 0:
-        dr.text((x + w / 2, y + 40), "no active directives", font=F["h2"], fill=BLACK, anchor="mm")
-        return
     section("MAJOR", data["major"])
     y += 6
     section("DAY-TO-DAY", data["d2d"])
@@ -231,6 +266,7 @@ def render(data: dict, layout: str = "landscape", cal: str = "2week") -> bytes:
         "sec": _font(13, bold=True), "row": _font(17), "cat": _font(12),
         "cal": _font(15), "cal_sm": _font(13), "cal_wd": _font(11),
         "up": _font(15), "meta": _font(13), "sub": _font(14),
+        "log": _font(13), "logb": _font(13, bold=True),
     }
     m = MARGIN
     y = _header(dr, m, W - m, F, data)

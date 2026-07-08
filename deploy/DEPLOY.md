@@ -127,9 +127,11 @@ GET /dashboard.png?layout=landscape|portrait&cal=2week|month
 
 It renders from live data: header with date + open/done counts, the calendar with today
 highlighted and event days dotted, an upcoming-events list, and priority-ordered tasks (Major
-first) with their open subtasks indented beneath. Everything fits-to-height with a `+ N more`
-footer so the screen never overflows. Done tasks and done subtasks are hidden (tasks counted in
-the header). Output is flattened to true 1-bit (hard threshold, dashed rules) for the mono panel.
+first). Each task nests, like the web UI: its own log thread (`└ MM-DD HH:MM · note`, most-recent
+first, from the `updates` table), then its open subtasks, each with their own logs beneath.
+Everything fits-to-height with a `+ N more` footer so the screen never overflows. Done tasks and
+done subtasks are hidden (tasks counted in the header). Output is flattened to true 1-bit (hard
+threshold, dashed rules, drawn elbows) for the mono panel.
 
 **Deploy** (runs inside `directives-web` on :8002, so it's live at
 `https://directives.bbarroso96.com/dashboard.png` through the tunnel):

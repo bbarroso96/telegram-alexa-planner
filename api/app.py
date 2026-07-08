@@ -137,6 +137,27 @@ def health():
 #   /dashboard.png?layout=portrait|landscape&cal=2week|month
 # ---------------------------------------------------------------------------
 
+def _eink_logs(updates: list[dict]) -> list[dict]:
+    """Reshape a task/subtask's `updates` thread into the e-ink log shape,
+    dropping the year from the 'YYYY-MM-DD HH:MM' stamp to save width."""
+    return [{"when": (u["ts"] or "")[5:], "text": u["text"]} for u in updates]
+
+
+def _eink_task(t: dict) -> dict:
+    """Flatten a serialized task (with its updates + subtasks + their updates)
+    into what eink.render() consumes: task logs, and each subtask with its logs."""
+    return {
+        "title": t["title"],
+        "category": t["category"],
+        "blocked": t["blocked"],
+        "logs": _eink_logs(t["updates"]),
+        "subs": [
+            {"title": s["title"], "done": s["done"], "logs": _eink_logs(s["updates"])}
+            for s in t["subs"]
+        ],
+    }
+
+
 def _eink_data() -> dict:
     today = date.today()
     today_s = today.isoformat()
@@ -147,8 +168,8 @@ def _eink_data() -> dict:
     done_count = sum(1 for t in visible if t["done"])
     ci = {c: i for i, c in enumerate(repo.get_categories())}
     key = lambda t: ci.get(t["category"], 99)
-    major = sorted([t for t in open_tasks if t["type"] == "major"], key=key)
-    d2d = sorted([t for t in open_tasks if t["type"] == "d2d"], key=key)
+    major = [_eink_task(t) for t in sorted([t for t in open_tasks if t["type"] == "major"], key=key)]
+    d2d = [_eink_task(t) for t in sorted([t for t in open_tasks if t["type"] == "d2d"], key=key)]
 
     events = _serialize_events()
     lo, hi = today - timedelta(days=7), today + timedelta(days=42)
