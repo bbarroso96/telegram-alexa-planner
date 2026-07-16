@@ -151,6 +151,44 @@ sudo systemctl restart directives-web.service
 ```
 
 **Device**: point the reTerminal at the URL on a ~60-min refresh — via SenseCraft HMI (image-URL
-widget) or a browser in kiosk mode. Pick `layout`/`cal` to taste once it's mounted. The battery
+widget) or a browser in kiosk mode. Pick `layout`/`cal` to taste once it's mounted. Set `every` to
+match the interval you configured, and turn **Battery Saver ON** in the SenseCraft deploy dialog —
+without it the device doesn't deep-sleep between updates and the battery drains in days.
+
+---
+
+## Wi-Fi watchdog (`deploy/netwatch.sh`)
+
+The Pi's `brcmfmac` (BCM43430) stack sometimes stops passing traffic while still showing a healthy
+association — strong signal, "Connected", but nothing routes; only a reboot brought it back. That
+also drains the reTerminal, which keeps waking to a dead endpoint.
+
+`netwatch.sh` runs every 2 min (systemd timer), pings the gateway + `1.1.1.1` + DNS, and escalates
+one step per failed run, resetting the moment connectivity returns:
+
+| Consecutive fails | Action |
+|---|---|
+| 1 | reconnect `wlan0` (`nmcli`) |
+| 2 | restart NetworkManager |
+| 3 | reload the `brcmfmac` driver |
+| 4+ | reboot (last resort) |
+
+It logs to **`/var/log/netwatch.log`** — deliberately a file, not journald: journald here is
+volatile (wiped each boot) and you can't reach the Pi over Pi Connect while it's offline, so the
+file is the only record of what failed first (Wi-Fi / DHCP / DNS / upstream).
+
+**Install:**
+```bash
+cd ~/Desktop/telegram-alexa-planner
+git pull
+sudo install -m 755 deploy/netwatch.sh /usr/local/bin/netwatch.sh
+sudo cp deploy/netwatch.service deploy/netwatch.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now netwatch.timer
+```
+**Check:** `systemctl list-timers netwatch*` · `sudo /usr/local/bin/netwatch.sh; cat /var/log/netwatch.log`
+
+Optional, so journald survives reboots too: `sudo mkdir -p /var/log/journal && sudo systemd-tmpfiles
+--create --prefix /var/log/journal && sudo systemctl restart systemd-journald` The battery
 and thermometer glyphs are drawn into the board header (top-right) with a blank gap after each —
 overlay the real battery % / SHT4x temperature as SenseCraft text widgets there.

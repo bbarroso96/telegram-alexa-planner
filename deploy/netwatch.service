@@ -1,0 +1,7 @@
+[Unit]
+Description=Wi-Fi connectivity watchdog (logs + self-heals wlan0)
+After=network.target NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/netwatch.sh
